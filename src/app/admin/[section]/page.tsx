@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { adminNav, plannedSections } from "@/config/navigation";
+import { requireAdmin } from "@/lib/auth/session";
 
 // Temporary placeholder for sidebar modules not yet built. Each module's real
 // static route (e.g. app/admin/agents/page.tsx) takes precedence over this one.
@@ -28,6 +29,7 @@ export async function generateMetadata(props: PageProps<"/admin/[section]">): Pr
 }
 
 export default async function AdminSectionPlaceholder(props: PageProps<"/admin/[section]">) {
+  await requireAdmin();
   const item = await getSection(props.params);
 
   return (

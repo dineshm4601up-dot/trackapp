@@ -15,45 +15,36 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { readSupabaseEnv } from "@/lib/env";
+import { requireAdmin } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Admin Dashboard" };
 
 type FoundationItem = {
   area: string;
-  state: "ready" | "missing" | "planned";
+  state: "ready" | "planned";
   detail: string;
 };
 
 const stateBadge = {
   ready: { label: "Ready", variant: "success" },
-  missing: { label: "Missing", variant: "warning" },
   planned: { label: "Planned", variant: "outline" },
 } as const;
 
-function getFoundationItems(): FoundationItem[] {
-  const supabaseConfigured = readSupabaseEnv().success;
-  return [
-    { area: "Next.js App Router", state: "ready", detail: "TypeScript strict, Tailwind, shadcn/ui" },
-    { area: "Admin & agent layouts", state: "ready", detail: "Sidebar shell and mobile bottom navigation" },
-    {
-      area: "Supabase environment",
-      state: supabaseConfigured ? "ready" : "missing",
-      detail: supabaseConfigured ? "URL and publishable key set" : "Add values to .env.local",
-    },
-    { area: "Authentication", state: "planned", detail: "Phase 2" },
-    { area: "Database & RLS", state: "planned", detail: "Phase 3" },
-  ];
-}
+const items: FoundationItem[] = [
+  { area: "Next.js App Router", state: "ready", detail: "TypeScript strict, Tailwind, shadcn/ui" },
+  { area: "Admin & agent layouts", state: "ready", detail: "Sidebar shell and mobile bottom navigation" },
+  { area: "Authentication & roles", state: "ready", detail: "Supabase Auth, profiles, role-based routes" },
+  { area: "Database & RLS", state: "planned", detail: "Phase 3" },
+];
 
-export default function AdminDashboardPage() {
-  const items = getFoundationItems();
+export default async function AdminDashboardPage() {
+  const { profile } = await requireAdmin();
 
   return (
     <>
       <PageHeader
-        title="Admin Dashboard"
-        description="Phase 1 foundation is ready."
+        title={`Welcome, ${profile.full_name ?? profile.email ?? "Administrator"}`}
+        description={`Role: ${profile.role}`}
         actions={
           <Button variant="outline" asChild>
             <Link href="/status">System status</Link>

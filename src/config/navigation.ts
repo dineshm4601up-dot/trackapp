@@ -39,7 +39,7 @@ export const agentNav: NavItem[] = [
   { title: "Home", href: "/agent", icon: House },
   { title: "Tasks", href: "/agent/tasks", icon: ListChecks, plannedPhase: 6 },
   { title: "History", href: "/agent/history", icon: History, plannedPhase: 6 },
-  { title: "Profile", href: "/agent/profile", icon: UserRound, plannedPhase: 6 },
+  { title: "Profile", href: "/agent/profile", icon: UserRound },
 ];
 
 /** The section root (first item) matches exactly; others match their subtree. */

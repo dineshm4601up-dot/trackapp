@@ -5,12 +5,15 @@ import { AdminNav } from "@/components/layout/admin-nav";
 import { Brand } from "@/components/layout/brand";
 import { SkipLink } from "@/components/layout/skip-link";
 import { siteConfig } from "@/config/site";
+import { requireAdmin } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
   title: { default: "Admin", template: `%s · Admin · ${siteConfig.name}` },
 };
 
-export default function AdminLayout({ children }: LayoutProps<"/admin">) {
+export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
+  const { profile } = await requireAdmin();
+
   return (
     <div className="flex min-h-dvh">
       <SkipLink />
@@ -25,7 +28,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminHeader />
+        <AdminHeader profile={profile} />
         <main id="main" className="flex-1 p-4 md:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-7xl space-y-6">{children}</div>
         </main>

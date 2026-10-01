@@ -1,53 +1,41 @@
 import type { Metadata } from "next";
-import { Info } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { LoginForm } from "@/features/auth/components/login-form";
+import { accessDeniedMessages, isAccessDeniedReason } from "@/features/auth/messages";
+import { resolvePostLoginPath } from "@/lib/auth/roles";
+import { getCurrentProfile } from "@/lib/auth/session";
+import { readSupabaseEnv } from "@/lib/env";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-// UI shell only — sign-in is wired to Supabase Auth in Phase 2.
-export default function LoginPage() {
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function LoginPage(props: PageProps<"/login">) {
+  const searchParams = await props.searchParams;
+  const next = firstParam(searchParams.next);
+  const reason = firstParam(searchParams.reason);
+
+  // Already signed in with a usable account: skip the form.
+  if (readSupabaseEnv().success) {
+    const state = await getCurrentProfile();
+    if (state.status === "ok") redirect(resolvePostLoginPath(state.profile.role, next));
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
-        <CardDescription>Use the account provided by your administrator.</CardDescription>
+        <CardTitle className="text-xl">Welcome back</CardTitle>
+        <CardDescription>Sign in with the account provided by your administrator.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-4" aria-describedby="login-unavailable">
-          <fieldset disabled className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="identifier">Email or employee code</Label>
-              <Input
-                id="identifier"
-                name="identifier"
-                autoComplete="username"
-                className="h-11"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                className="h-11"
-              />
-            </div>
-            <Button type="submit" size="xl" className="w-full">
-              Sign in
-            </Button>
-          </fieldset>
-          <Alert id="login-unavailable">
-            <Info aria-hidden />
-            <AlertDescription>Sign-in will be enabled in Phase 2.</AlertDescription>
-          </Alert>
-        </form>
+        <LoginForm
+          next={next}
+          notice={isAccessDeniedReason(reason) ? accessDeniedMessages[reason] : undefined}
+        />
       </CardContent>
     </Card>
   );

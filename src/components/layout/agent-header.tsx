@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import { Brand } from "@/components/layout/brand";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/layout/user-avatar";
+import type { Profile } from "@/lib/auth/profile";
 
-export function AgentHeader() {
+export function AgentHeader({ profile }: { profile: Profile }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <Brand href="/agent" />
@@ -12,9 +13,7 @@ export function AgentHeader() {
         aria-label="Profile"
         className="flex size-11 items-center justify-center rounded-full"
       >
-        <Avatar>
-          <AvatarFallback>AG</AvatarFallback>
-        </Avatar>
+        <UserAvatar profile={profile} />
       </Link>
     </header>
   );

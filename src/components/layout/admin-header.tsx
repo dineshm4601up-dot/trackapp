@@ -1,16 +1,17 @@
 import { AdminMobileNav } from "@/components/layout/admin-mobile-nav";
 import { Brand } from "@/components/layout/brand";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/layout/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SignOutMenuItem } from "@/features/auth/components/sign-out-button";
+import type { Profile } from "@/lib/auth/profile";
 
-export function AdminHeader() {
+export function AdminHeader({ profile }: { profile: Profile }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6">
       <AdminMobileNav />
@@ -23,15 +24,15 @@ export function AdminHeader() {
             className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             aria-label="Account menu"
           >
-            <Avatar>
-              <AvatarFallback>AD</AvatarFallback>
-            </Avatar>
+            <UserAvatar profile={profile} />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel>Administrator</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="flex flex-col gap-0.5">
+              <span className="truncate text-foreground">{profile.full_name ?? "Administrator"}</span>
+              <span className="truncate text-xs font-normal">{profile.email}</span>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {/* Enabled with authentication in Phase 2. */}
-            <DropdownMenuItem disabled>Sign out</DropdownMenuItem>
+            <SignOutMenuItem />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

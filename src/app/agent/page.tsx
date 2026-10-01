@@ -6,13 +6,19 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
+import { requireAgent } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Home" };
 
-export default function AgentHomePage() {
+export default async function AgentHomePage() {
+  const { profile } = await requireAgent();
+
   return (
     <>
-      <PageHeader title="Agent Dashboard" description="Phase 1 foundation is ready." />
+      <PageHeader
+        title={`Welcome, ${profile.full_name ?? profile.email ?? "Agent"}`}
+        description={`Role: ${profile.role}`}
+      />
 
       <section aria-label="Today's summary" className="grid grid-cols-3 gap-3">
         <StatCard label="Assigned" value="—" />

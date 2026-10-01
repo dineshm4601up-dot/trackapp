@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { agentNav, plannedSections } from "@/config/navigation";
+import { requireAgent } from "@/lib/auth/session";
 
 // Temporary placeholder for agent screens not yet built. Each screen's real
 // static route (e.g. app/agent/tasks/page.tsx) takes precedence over this one.
@@ -28,6 +29,7 @@ export async function generateMetadata(props: PageProps<"/agent/[section]">): Pr
 }
 
 export default async function AgentSectionPlaceholder(props: PageProps<"/agent/[section]">) {
+  await requireAgent();
   const item = await getSection(props.params);
 
   return (
