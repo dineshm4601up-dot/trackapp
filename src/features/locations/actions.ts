@@ -6,6 +6,8 @@ import { z } from "zod";
 import { locationSchema } from "@/features/locations/schemas";
 import { requireAdmin } from "@/lib/auth/session";
 import { dbErrorState, describeDbError } from "@/lib/db-errors";
+import { searchPlaces } from "@/lib/maps/geocoding";
+import type { PlaceResult } from "@/lib/maps/types";
 import { formValues, validationError, type ActionResult, type FormState } from "@/lib/form-state";
 import { createClient } from "@/lib/supabase/server";
 import { uuid } from "@/lib/validation/fields";
@@ -94,4 +96,20 @@ export async function setLocationActive(id: string, active: boolean): Promise<Ac
 
   revalidatePath(LIST_PATH);
   return { ok: true, message: `Location "${data[0].location_name}" ${active ? "activated" : "deactivated"}.` };
+}
+
+const placeQuery = z.string().trim().min(3).max(200);
+
+export type PlaceSearchResult = { ok: true; results: PlaceResult[] } | { ok: false; message: string };
+
+/** Place search for the location form. Admin-only; nothing is saved. */
+export async function searchLocationPlaces(query: string): Promise<PlaceSearchResult> {
+  await requireAdmin();
+  const parsed = placeQuery.safeParse(query);
+  if (!parsed.success) return { ok: false, message: "Enter at least 3 characters to search." };
+  try {
+    return { ok: true, results: await searchPlaces(parsed.data) };
+  } catch {
+    return { ok: false, message: "Unable to search this location. Please try again." };
+  }
 }

@@ -13,3 +13,6 @@ export type MapMarker = {
   details: readonly (readonly [label: string, value: string])[];
   link?: { href: string; text: string };
 };
+
+/** One place-search result, whatever the geocoding provider. */
+export type PlaceResult = { id: string; label: string; latitude: number; longitude: number };

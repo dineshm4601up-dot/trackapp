@@ -1,8 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { ExternalLink } from "lucide-react";
-
 import {
   FieldShell,
   FormError,
@@ -12,10 +9,10 @@ import {
   TextField,
 } from "@/components/shared/form-fields";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
+import { CoordinatePicker } from "@/features/locations/components/coordinate-picker";
 import type { LocationWithCustomer } from "@/features/locations/queries";
-import { GEOFENCE_DEFAULT, GEOFENCE_MAX, GEOFENCE_MIN } from "@/features/locations/schemas";
+import { GEOFENCE_DEFAULT } from "@/features/locations/schemas";
 import { useFormAction } from "@/hooks/use-form-action";
-import { mapsSearchUrl } from "@/lib/format";
 import type { FormState } from "@/lib/form-state";
 
 type LocationFormProps = {
@@ -29,7 +26,18 @@ export function LocationForm({ action, location }: LocationFormProps) {
     state.status === "error" && state.values ? state.values.is_active === "on" : (location?.is_active ?? true);
 
   return (
-    <form key={formKey} action={formAction} className="space-y-6" noValidate>
+    <form
+      key={formKey}
+      action={formAction}
+      className="space-y-6"
+      noValidate
+      onSubmit={(event) => {
+        // Coordinates the server would reject are stopped here; the fields already say why.
+        if (!event.currentTarget.querySelector("[data-coordinates-invalid]")) return;
+        event.preventDefault();
+        event.currentTarget.querySelector<HTMLInputElement>("#latitude")?.focus();
+      }}
+    >
       <FormError message={state.status === "error" ? state.message : undefined} />
 
       <FormSection title="Location">
@@ -86,7 +94,7 @@ export function LocationForm({ action, location }: LocationFormProps) {
         />
       </FormSection>
 
-      <CoordinatesSection
+      <CoordinatePicker
         latitude={valueFor("latitude", location?.latitude?.toString())}
         longitude={valueFor("longitude", location?.longitude?.toString())}
         radius={valueFor("geofence_radius_meters", String(location?.geofence_radius_meters ?? GEOFENCE_DEFAULT))}
@@ -119,78 +127,5 @@ export function LocationForm({ action, location }: LocationFormProps) {
 
       <FormFooter cancelHref="/admin/locations" pending={pending} submitLabel={location ? "Save changes" : "Create location"} />
     </form>
-  );
-}
-
-const DECIMAL = /^-?\d{1,3}(\.\d+)?$/;
-
-/** Coordinates plus a link to confirm them on a map. No device GPS is used. */
-function CoordinatesSection({
-  latitude,
-  longitude,
-  radius,
-  errorFor,
-}: {
-  latitude: string;
-  longitude: string;
-  radius: string;
-  errorFor: (field: string) => string | undefined;
-}) {
-  const [lat, setLat] = useState(latitude);
-  const [lng, setLng] = useState(longitude);
-  const latNum = Number(lat);
-  const lngNum = Number(lng);
-  const previewable =
-    DECIMAL.test(lat.trim()) && DECIMAL.test(lng.trim()) && Math.abs(latNum) <= 90 && Math.abs(lngNum) <= 180;
-
-  return (
-    <FormSection
-      title="Coordinates & geofence"
-      description="Agents must be within the geofence radius of these coordinates to check in (enforced in a later phase)."
-    >
-      <TextField
-        name="latitude"
-        label="Latitude"
-        inputMode="decimal"
-        placeholder="11.3412340"
-        hint="−90 to 90, up to 7 decimals"
-        value={lat}
-        onChange={(e) => setLat(e.target.value)}
-        error={errorFor("latitude")}
-      />
-      <TextField
-        name="longitude"
-        label="Longitude"
-        inputMode="decimal"
-        placeholder="77.7178230"
-        hint="−180 to 180, up to 7 decimals"
-        value={lng}
-        onChange={(e) => setLng(e.target.value)}
-        error={errorFor("longitude")}
-      />
-      <TextField
-        name="geofence_radius_meters"
-        label="Geofence radius (metres)"
-        inputMode="numeric"
-        hint={`${GEOFENCE_MIN}–${GEOFENCE_MAX} m. Default ${GEOFENCE_DEFAULT} m.`}
-        defaultValue={radius}
-        error={errorFor("geofence_radius_meters")}
-      />
-      <div className="flex items-end pb-1">
-        {previewable ? (
-          <a
-            href={mapsSearchUrl(lat.trim(), lng.trim())}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
-          >
-            <ExternalLink className="size-4" aria-hidden />
-            Preview on map
-          </a>
-        ) : (
-          <p className="text-xs text-muted-foreground">Enter both coordinates to preview them on a map.</p>
-        )}
-      </div>
-    </FormSection>
   );
 }
