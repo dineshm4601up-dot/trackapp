@@ -3,6 +3,7 @@ import {
   Bell,
   Building2,
   ChartColumn,
+  ChartLine,
   ClipboardList,
   History,
   House,
@@ -11,6 +12,7 @@ import {
   MapPin,
   Package,
   Settings,
+  Sparkles,
   UserRound,
   Users,
   type LucideIcon,
@@ -43,10 +45,12 @@ export const adminNavGroups: NavGroup[] = [
       { title: "Tasks", href: "/admin/tasks", icon: ClipboardList },
       { title: "Monitoring", href: "/admin/monitoring", icon: Activity },
       { title: "Notifications", href: "/admin/notifications", icon: Bell },
-      { title: "Reports", href: "/admin/reports", icon: ChartColumn, plannedPhase: 12 },
+      { title: "Analytics", href: "/admin/analytics", icon: ChartLine },
+      { title: "Reports", href: "/admin/reports", icon: ChartColumn },
+      { title: "AI insights", href: "/admin/ai", icon: Sparkles },
     ],
   },
-  { label: "System", items: [{ title: "Settings", href: "/admin/settings", icon: Settings, plannedPhase: 12 }] },
+  { label: "System", items: [{ title: "Settings", href: "/admin/settings", icon: Settings }] },
 ];
 
 export const adminNav: NavItem[] = adminNavGroups.flatMap((group) => group.items);

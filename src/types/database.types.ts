@@ -80,6 +80,139 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"ai_feedback": {
+                  Row: {
+                    "created_at": string,"id": string,"notes": string | null,"prediction_id": string,"rating": string,"user_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"notes"?: string | null,"prediction_id": string,"rating": string,"user_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"notes"?: string | null,"prediction_id"?: string,"rating"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_feedback_prediction_id_fkey"
+      columns: ["prediction_id"]
+isOneToOne: false
+      referencedRelation: "ai_current_predictions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ai_feedback_prediction_id_fkey"
+      columns: ["prediction_id"]
+isOneToOne: false
+      referencedRelation: "ai_predictions"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ai_feedback_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ai_models": {
+                  Row: {
+                    "created_at": string,"description": string,"feature_version": string,"id": string,"model_type": string,"name": string,"status": string,"version": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"description": string,"feature_version": string,"id"?: string,"model_type": string,"name": string,"status"?: string,"version": string
+                  }
+                  Update: {
+                    "created_at"?: string,"description"?: string,"feature_version"?: string,"id"?: string,"model_type"?: string,"name"?: string,"status"?: string,"version"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"ai_predictions": {
+                  Row: {
+                    "confidence": number | null,"created_at": string,"entity_id": string,"entity_type": string,"evaluated_at": string | null,"expires_at": string | null,"explanation": NonNullable<Json>,"feature_version": string,"fingerprint": string,"generated_at": string,"id": string,"model_name": string,"model_version": string,"outcome": Json | null,"prediction_type": string,"prediction_value": NonNullable<Json>
+                  }
+                  Insert: {
+                    "confidence"?: number | null,"created_at"?: string,"entity_id": string,"entity_type": string,"evaluated_at"?: string | null,"expires_at"?: string | null,"explanation"?: NonNullable<Json>,"feature_version": string,"fingerprint": string,"generated_at"?: string,"id"?: string,"model_name": string,"model_version": string,"outcome"?: Json | null,"prediction_type": string,"prediction_value": NonNullable<Json>
+                  }
+                  Update: {
+                    "confidence"?: number | null,"created_at"?: string,"entity_id"?: string,"entity_type"?: string,"evaluated_at"?: string | null,"expires_at"?: string | null,"explanation"?: NonNullable<Json>,"feature_version"?: string,"fingerprint"?: string,"generated_at"?: string,"id"?: string,"model_name"?: string,"model_version"?: string,"outcome"?: Json | null,"prediction_type"?: string,"prediction_value"?: NonNullable<Json>
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"ai_recommendations": {
+                  Row: {
+                    "confidence": number | null,"created_at": string,"dedupe_key": string,"description": string,"entity_id": string | null,"entity_type": string,"id": string,"model_name": string,"model_version": string,"reasoning": NonNullable<Json>,"recommendation_type": string,"review_notes": string | null,"reviewed_at": string | null,"reviewed_by": string | null,"status": string,"title": string
+                  }
+                  Insert: {
+                    "confidence"?: number | null,"created_at"?: string,"dedupe_key": string,"description": string,"entity_id"?: string | null,"entity_type": string,"id"?: string,"model_name": string,"model_version": string,"reasoning"?: NonNullable<Json>,"recommendation_type": string,"review_notes"?: string | null,"reviewed_at"?: string | null,"reviewed_by"?: string | null,"status"?: string,"title": string
+                  }
+                  Update: {
+                    "confidence"?: number | null,"created_at"?: string,"dedupe_key"?: string,"description"?: string,"entity_id"?: string | null,"entity_type"?: string,"id"?: string,"model_name"?: string,"model_version"?: string,"reasoning"?: NonNullable<Json>,"recommendation_type"?: string,"review_notes"?: string | null,"reviewed_at"?: string | null,"reviewed_by"?: string | null,"status"?: string,"title"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_recommendations_reviewed_by_fkey"
+      columns: ["reviewed_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ai_runs": {
+                  Row: {
+                    "duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"input_tokens": number | null,"insufficient": number,"kind": string,"model": string | null,"output_tokens": number | null,"predictions": number,"provider": string | null,"recommendations": number,"started_at": string,"started_by": string | null,"status": string,"trigger": string
+                  }
+                  Insert: {
+                    "duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"insufficient"?: number,"kind": string,"model"?: string | null,"output_tokens"?: number | null,"predictions"?: number,"provider"?: string | null,"recommendations"?: number,"started_at"?: string,"started_by"?: string | null,"status"?: string,"trigger": string
+                  }
+                  Update: {
+                    "duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"insufficient"?: number,"kind"?: string,"model"?: string | null,"output_tokens"?: number | null,"predictions"?: number,"provider"?: string | null,"recommendations"?: number,"started_at"?: string,"started_by"?: string | null,"status"?: string,"trigger"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_runs_started_by_fkey"
+      columns: ["started_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ai_settings": {
+                  Row: {
+                    "description": string,"enabled": boolean,"key": string,"updated_at": string,"updated_by": string | null
+                  }
+                  Insert: {
+                    "description": string,"enabled"?: boolean,"key": string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Update: {
+                    "description"?: string,"enabled"?: boolean,"key"?: string,"updated_at"?: string,"updated_by"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_settings_updated_by_fkey"
+      columns: ["updated_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ai_summaries": {
+                  Row: {
+                    "content": NonNullable<Json>,"facts": NonNullable<Json>,"generated_at": string,"generated_by": string | null,"id": string,"model": string | null,"period": string,"provider": string
+                  }
+                  Insert: {
+                    "content": NonNullable<Json>,"facts": NonNullable<Json>,"generated_at"?: string,"generated_by"?: string | null,"id"?: string,"model"?: string | null,"period": string,"provider": string
+                  }
+                  Update: {
+                    "content"?: NonNullable<Json>,"facts"?: NonNullable<Json>,"generated_at"?: string,"generated_by"?: string | null,"id"?: string,"model"?: string | null,"period"?: string,"provider"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ai_summaries_generated_by_fkey"
+      columns: ["generated_by"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"app_settings": {
                   Row: {
                     "description": string,"key": string,"updated_at": string,"value": number
@@ -592,6 +725,20 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"ai_current_predictions": {
+                  Row: {
+                    "confidence": number | null,"entity_id": string | null,"entity_type": string | null,"expires_at": string | null,"explanation": Json | null,"feature_version": string | null,"generated_at": string | null,"id": string | null,"is_stale": boolean | null,"model_name": string | null,"model_version": string | null,"outcome": Json | null,"prediction_type": string | null,"prediction_value": Json | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"ai_evaluation": {
+                  Row: {
+                    "eta_evaluated": number | null,"eta_mean_abs_error_minutes": number | null,"evaluated": number | null,"failed_total": number | null,"high_and_failed": number | null,"high_and_late": number | null,"high_not_late": number | null,"model_name": string | null,"model_version": string | null,"not_high_but_late": number | null,"not_high_not_late": number | null,"prediction_type": string | null,"predictions": number | null
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"communication_log": {
                   Row: {
                     "attempt_count": number | null,"channel": string | null,"created_at": string | null,"failed_at": string | null,"id": string | null,"last_error": string | null,"notification_id": string | null,"provider": string | null,"queue_id": string | null,"recipient_address": string | null,"recipient_name": string | null,"recipient_user_id": string | null,"sent_at": string | null,"status": string | null,"task_code": string | null,"task_id": string | null,"title": string | null,"type": string | null
@@ -725,6 +872,57 @@ isOneToOne: false
 "agent_transition_task":
 { Args: { "p_expected_status": Database["public"]['Enums']["task_status"],"p_notes"?: string,"p_reason"?: string,"p_task_id": string,"p_to_status": Database["public"]['Enums']["task_status"] }; Returns: Database["public"]['Enums']["task_status"]
                            },
+"ai_agent_workload":
+{ Args: { "p_tz"?: string }; Returns: {
+              "active_tasks": number,"agent_id": string,"agent_name": string,"due_today": number,"in_field": number,"overdue": number
+            }[]
+                           },
+"ai_begin_run":
+{ Args: { "p_kind": string,"p_min_interval_seconds"?: number,"p_trigger": string }; Returns: string
+                           },
+"ai_caller_allowed":
+{ Args: Record<PropertyKey, never>; Returns: boolean
+                           },
+"ai_detect_anomalies":
+{ Args: { "p_tz"?: string }; Returns: {
+              "baseline": number,"dedupe_key": string,"detail": string,"entity_id": string,"entity_label": string,"entity_type": string,"kind": string,"observed": number,"severity": string,"title": string,"unit": string
+            }[]
+                           },
+"ai_feature_enabled":
+{ Args: { "p_key": string }; Returns: boolean
+                           },
+"ai_finish_run":
+{ Args: { "p_error"?: string,"p_input_tokens"?: number,"p_insufficient"?: number,"p_model"?: string,"p_output_tokens"?: number,"p_predictions"?: number,"p_provider"?: string,"p_recommendations"?: number,"p_run": string,"p_status": string }; Returns: undefined
+                           },
+"ai_record_outcomes":
+{ Args: { "p_tz"?: string }; Returns: number
+                           },
+"ai_review_recommendation":
+{ Args: { "p_decision": string,"p_id": string,"p_notes"?: string }; Returns: string
+                           },
+"ai_set_setting":
+{ Args: { "p_enabled": boolean,"p_key": string }; Returns: boolean
+                           },
+"ai_store_predictions":
+{ Args: { "p_items": Json }; Returns: number
+                           },
+"ai_store_recommendations":
+{ Args: { "p_items": Json }; Returns: number
+                           },
+"ai_store_summary":
+{ Args: { "p_content": Json,"p_facts": Json,"p_model"?: string,"p_period": string,"p_provider": string }; Returns: string
+                           },
+"ai_submit_feedback":
+{ Args: { "p_notes"?: string,"p_prediction_id": string,"p_rating": string }; Returns: string
+                           },
+"ai_task_features":
+{ Args: { "p_tz"?: string }; Returns: {
+              "agent_id": string,"agent_name": string,"all_closed": number,"all_failed": number,"baseline_scope": string,"checkin_ok": boolean,"checkin_rejected": number,"customer_name": string,"due_at": string,"is_overdue": boolean,"line_count": number,"location_closed": number,"location_failed": number,"location_id": string,"location_name": string,"minutes_in_stage": number,"minutes_to_due": number,"priority": number,"remaining_median_minutes": number,"remaining_p25_minutes": number,"remaining_p75_minutes": number,"remaining_samples": number,"stage_entered_at": string,"status": Database["public"]['Enums']["task_status"],"task_code": string,"task_id": string,"task_type": Database["public"]['Enums']["task_type"],"title": string,"type_closed": number,"type_failed": number,"type_late": number,"type_scheduled_completed": number
+            }[]
+                           },
+"ai_volume_history":
+{ Args: { "p_tz"?: string }; Returns: Json
+                           },
 "app_setting":
 { Args: { "p_default": number,"p_key": string }; Returns: number
                            },
@@ -794,6 +992,9 @@ isOneToOne: false
 "mark_notification_read":
 { Args: { "p_id": string }; Returns: boolean
                            },
+"my_task_summary":
+{ Args: { "p_from": string,"p_to": string,"p_tz"?: string }; Returns: Json
+                           },
 "notification_category":
 { Args: { "p_type": string }; Returns: string
                            },
@@ -808,6 +1009,50 @@ isOneToOne: false
                            },
 "publish_notification":
 { Args: { "p_dedupe": string,"p_link"?: boolean,"p_message": string,"p_recipient": string,"p_task_id": string,"p_title": string,"p_type": string }; Returns: string
+                           },
+"report_agents":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "accept_samples": number,"accepted": number,"active": number,"agent_id": string,"agent_name": string,"assigned": number,"avg_accept_seconds": number,"avg_checkin_seconds": number,"avg_execution_seconds": number,"avg_start_seconds": number,"cancelled": number,"cash_collected": number,"cash_expected": number,"checkin_samples": number,"checkins_ok": number,"checkins_rejected": number,"completed": number,"deliveries_closed": number,"employee_code": string,"execution_samples": number,"failed": number,"late": number,"median_execution_seconds": number,"on_time": number,"overdue": number,"partial": number,"qty_assigned": number,"qty_delivered": number,"start_samples": number,"started": number
+            }[]
+                           },
+"report_cash":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: Json
+                           },
+"report_checkins":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: Json
+                           },
+"report_customers":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "active": number,"cancelled": number,"cash_collected": number,"cash_expected": number,"completed": number,"customer_id": string,"customer_name": string,"failed": number,"locations": number,"partial": number,"qty_assigned": number,"qty_delivered": number,"tasks": number
+            }[]
+                           },
+"report_data_quality":
+{ Args: { "p_from": string,"p_to": string,"p_tz"?: string }; Returns: {
+              "detail": string,"issue": string,"severity": string,"task_code": string,"task_id": string
+            }[]
+                           },
+"report_durations":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "avg_seconds": number,"max_seconds": number,"median_seconds": number,"min_seconds": number,"samples": number,"stage": string,"stage_order": number
+            }[]
+                           },
+"report_locations":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "active": number,"avg_execution_seconds": number,"checkin_attempts": number,"checkins_ok": number,"checkins_rejected": number,"completed": number,"customer_id": string,"customer_name": string,"deliveries_closed": number,"deliveries_partial": number,"execution_samples": number,"failed": number,"location_city": string,"location_id": string,"location_name": string,"partial": number,"tasks": number
+            }[]
+                           },
+"report_overview":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: Json
+                           },
+"report_products":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "assigned_qty": number,"delivered_qty": number,"outstanding_qty": number,"partial_lines": number,"product_id": string,"product_name": string,"sku": string,"tasks": number,"unit": string
+            }[]
+                           },
+"report_task_facts":
+{ Args: { "p_agent"?: string,"p_customer"?: string,"p_from": string,"p_location"?: string,"p_priority"?: number,"p_status"?: Database["public"]['Enums']["task_status"],"p_to": string,"p_type"?: Database["public"]['Enums']["task_type"],"p_tz"?: string }; Returns: {
+              "accept_seconds": number,"accepted_at": string,"agent_id": string,"agent_name": string,"arrived_at": string,"assigned_at": string,"assigned_qty": number,"cash_outcome": string,"checked_in_at": string,"checkin_accuracy_m": number,"checkin_attempts": number,"checkin_distance_m": number,"checkin_ok": boolean,"checkin_rejected": number,"checkin_seconds": number,"collected_amount": number,"completed_at": string,"created_at": string,"customer_id": string,"customer_name": string,"delivered_qty": number,"delivery_outcome": string,"depart_seconds": number,"due_at": string,"employee_code": string,"execution_seconds": number,"expected_amount": number,"id": string,"is_active": boolean,"is_cancelled": boolean,"is_closed": boolean,"is_completed": boolean,"is_eligible": boolean,"is_failed": boolean,"is_overdue": boolean,"is_partial": boolean,"line_count": number,"location_city": string,"location_id": string,"location_name": string,"missing_proof": boolean,"needs_verification": boolean,"on_the_way_at": string,"on_time": boolean,"outstanding_amount": number,"payment_method": string,"priority": number,"proof_count": number,"scheduled_date": string,"scheduled_end_time": string,"scheduled_start_time": string,"start_seconds": number,"started_at": string,"status": Database["public"]['Enums']["task_status"],"task_code": string,"task_date": string,"task_type": Database["public"]['Enums']["task_type"],"title": string,"travel_seconds": number
+            }[]
                            },
 "task_status_counts":
 { Args: { "p_date": string }; Returns: {

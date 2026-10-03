@@ -1653,6 +1653,515 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Phase 11: reporting functions — exact figures on known fixtures, and isolation
+-- ---------------------------------------------------------------------------
+-- A week of tasks in March 2031 (a period no other fixture touches).
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, priority, scheduled_date,
+                          scheduled_end_time, assigned_at, accepted_at, started_at, completed_at, expected_amount)
+select ('57000000-0000-4000-a000-0000000000' || s)::uuid, ty::public.task_type, st::public.task_status, ag::uuid,
+       '20000000-0000-4000-a000-0000000000a1', '30000000-0000-4000-a000-0000000000a1', 'P11 ' || s, 3, d::date,
+       en::time, asg::timestamptz, acc::timestamptz, sta::timestamptz, com::timestamptz, amt
+from (values
+  -- full delivery, completed on time (execution 1 h, accepted after 10 min)
+  ('01', 'DELIVER_PRODUCTS', 'COMPLETED', '10000000-0000-4000-a000-0000000000a1', '2031-03-01', '18:00',
+   '2031-03-01 09:00+05:30', '2031-03-01 09:10+05:30', '2031-03-01 11:00+05:30', '2031-03-01 12:00+05:30', null),
+  ('02', 'DELIVER_PRODUCTS', 'PARTIALLY_COMPLETED', '10000000-0000-4000-a000-0000000000a1', '2031-03-01', null,
+   '2031-03-01 09:00+05:30', null, '2031-03-01 13:00+05:30', '2031-03-01 13:30+05:30', null),
+  ('03', 'DELIVER_PRODUCTS', 'FAILED', '10000000-0000-4000-a000-0000000000a1', '2031-03-02', null, null, null, null, null, null),
+  -- cash in full, but completed after the scheduled end → late
+  ('04', 'COLLECT_CASH', 'COMPLETED', '10000000-0000-4000-a000-0000000000a1', '2031-03-02', '10:00',
+   null, null, '2031-03-02 11:00+05:30', '2031-03-02 12:00+05:30', 1000),
+  ('05', 'COLLECT_CASH', 'PARTIALLY_COMPLETED', '10000000-0000-4000-a000-0000000000a1', '2031-03-03', null, null, null, null, null, 2000),
+  ('06', 'COLLECT_CASH', 'FAILED', '10000000-0000-4000-a000-0000000000a1', '2031-03-03', null, null, null, null, null, 300),
+  ('07', 'COLLECT_CASH', 'ASSIGNED', '10000000-0000-4000-a000-0000000000a1', '2031-03-04', null, null, null, null, null, 700),
+  ('08', 'SURVEY', 'CANCELLED', '10000000-0000-4000-a000-0000000000a1', '2031-03-04', null, null, null, null, null, null),
+  ('09', 'SURVEY', 'ASSIGNED', '10000000-0000-4000-a000-0000000000b1', '2031-03-02', null, null, null, null, null, null),
+  ('11', 'SURVEY', 'DRAFT', '10000000-0000-4000-a000-0000000000a1', '2031-03-05', null, null, null, null, null, null),
+  -- long past and still open → overdue
+  ('10', 'SURVEY', 'ASSIGNED', '10000000-0000-4000-a000-0000000000a1', '2020-01-05', '17:00', null, null, null, null, null),
+  -- inconsistent record for the data-quality report
+  ('13', 'SURVEY', 'COMPLETED', '10000000-0000-4000-a000-0000000000a1', '2031-04-01', null,
+   '2031-04-01 10:00+05:30', '2031-04-01 09:00+05:30', '2031-04-01 12:00+05:30', '2031-04-01 11:00+05:30', null)
+) v(s, ty, st, ag, d, en, asg, acc, sta, com, amt);
+
+-- Unscheduled task created 4 March 01:30 IST (= 3 March 20:00 UTC): belongs to 4 March in the business time zone.
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, created_at)
+values ('57000000-0000-4000-a000-000000000012', 'SURVEY', 'ASSIGNED', '10000000-0000-4000-a000-0000000000a1',
+        '20000000-0000-4000-a000-0000000000a1', '30000000-0000-4000-a000-0000000000a1', 'P11 12', '2031-03-03 20:00+00');
+
+insert into public.task_products (task_id, product_id, assigned_quantity, delivered_quantity) values
+  ('57000000-0000-4000-a000-000000000001', '40000000-0000-4000-a000-0000000000a1', 10, 10),
+  ('57000000-0000-4000-a000-000000000002', '40000000-0000-4000-a000-0000000000a1', 10, 6),
+  ('57000000-0000-4000-a000-000000000003', '40000000-0000-4000-a000-0000000000a1', 5, 0);
+insert into public.cash_collections (task_id, agent_id, expected_amount, collected_amount, payment_method, collected_at) values
+  ('57000000-0000-4000-a000-000000000004', '10000000-0000-4000-a000-0000000000a1', 1000, 1000, 'UPI', '2031-03-02 12:00+05:30'),
+  ('57000000-0000-4000-a000-000000000005', '10000000-0000-4000-a000-0000000000a1', 2000, 500, 'CASH', '2031-03-03 12:00+05:30');
+insert into public.checkins (task_id, agent_id, latitude, longitude, accuracy_meters, distance_from_location_meters, geofence_radius_meters, is_within_geofence, checked_in_at) values
+  ('57000000-0000-4000-a000-000000000001', '10000000-0000-4000-a000-0000000000a1', 11.5, 77.5, 40, 900, 100, false, '2031-03-01 10:40+05:30'),
+  ('57000000-0000-4000-a000-000000000001', '10000000-0000-4000-a000-0000000000a1', 11.3, 77.7, 20, 30, 100, true, '2031-03-01 10:50+05:30'),
+  ('57000000-0000-4000-a000-000000000002', '10000000-0000-4000-a000-0000000000a1', 11.3, 77.7, 10, 50, 100, true, '2031-03-01 12:50+05:30');
+insert into public.task_proofs (task_id, agent_id, proof_type) values
+  ('57000000-0000-4000-a000-000000000001', '10000000-0000-4000-a000-0000000000a1', 'PHOTO');
+
+do $$
+declare
+  admin_id constant uuid := '00000000-0000-4000-a000-00000000000a';
+  agent_a  constant uuid := '00000000-0000-4000-a000-0000000000a1';
+  agent_b  constant uuid := '00000000-0000-4000-a000-0000000000b1';
+  a_agent  constant uuid := '10000000-0000-4000-a000-0000000000a1';
+  b_agent  constant uuid := '10000000-0000-4000-a000-0000000000b1';
+  d1 constant date := '2031-03-01';
+  d2 constant date := '2031-03-07';
+  o jsonb;
+  t jsonb;
+  r text;
+  n bigint;
+  rec record;
+begin
+  perform pg_temp.act_as(admin_id);
+
+  -- ---------------------------------------------------------------- overview
+  o := public.report_overview(d1, d2);
+  t := o -> 'totals';
+  perform pg_temp.check('P11 Counts: 10 tasks (draft excluded), 9 eligible (cancelled excluded), 3 active',
+    (t ->> 'total')::int = 10 and (t ->> 'eligible')::int = 9 and (t ->> 'active')::int = 3 and (t ->> 'cancelled')::int = 1, t::text);
+  perform pg_temp.check('P11 Outcomes: 2 completed, 2 partially completed, 2 failed',
+    (t ->> 'completed')::int = 2 and (t ->> 'partial')::int = 2 and (t ->> 'failed')::int = 2, t::text);
+  perform pg_temp.check('P11 On time: 1 on time, 1 late; tasks without a scheduled end are neither',
+    (t ->> 'on_time')::int = 1 and (t ->> 'late')::int = 1, t::text);
+  perform pg_temp.check('P11 Delivery: 25 assigned and 16 delivered on closed tasks (failed delivery = 0 delivered)',
+    (t ->> 'qty_assigned')::numeric = 25 and (t ->> 'qty_delivered')::numeric = 16 and (t ->> 'delivery_tasks_closed')::int = 3, t::text);
+  perform pg_temp.check('P11 Cash: 3,300 expected and 1,500 collected on closed tasks; 700 awaiting on the open task',
+    (t ->> 'cash_expected')::numeric = 3300 and (t ->> 'cash_collected')::numeric = 1500 and (t ->> 'cash_open')::numeric = 700, t::text);
+  perform pg_temp.check('P11 Check-ins: 3 attempts, 1 rejected, 2 tasks checked in',
+    (t ->> 'checkin_attempts')::int = 3 and (t ->> 'checkin_rejected')::int = 1 and (t ->> 'checkin_ok')::int = 2, t::text);
+  perform pg_temp.check('P11 Distribution by type and status adds up to the total',
+    (select sum((x ->> 'total')::int) from jsonb_array_elements(o -> 'by_type') x) = 10
+    and (select sum((x ->> 'n')::int) from jsonb_array_elements(o -> 'by_status') x) = 10
+    and (select (x ->> 'completed')::int from jsonb_array_elements(o -> 'by_type') x where x ->> 'key' = 'COLLECT_CASH') = 1);
+  perform pg_temp.check('P11 Trend: one bucket per day (7), totals add up, 1 March has 2 tasks',
+    jsonb_array_length(o -> 'trend') = 7 and o ->> 'bucket' = 'day'
+    and (select sum((x ->> 'total')::int) from jsonb_array_elements(o -> 'trend') x) = 10
+    and (select (x ->> 'total')::int from jsonb_array_elements(o -> 'trend') x where x ->> 'bucket' = '2031-03-01') = 2);
+
+  -- ---------------------------------------------------------------- filters and time zone
+  perform pg_temp.check('P11 Filters: agent, type, status, customer and priority narrow the same figures',
+    (public.report_overview(d1, d2, 'Asia/Kolkata', b_agent) -> 'totals' ->> 'total')::int = 1
+    and (public.report_overview(d1, d2, 'Asia/Kolkata', null, 'COLLECT_CASH') -> 'totals' ->> 'total')::int = 4
+    and (public.report_overview(d1, d2, 'Asia/Kolkata', null, null, 'FAILED') -> 'totals' ->> 'total')::int = 2
+    and (public.report_overview(d1, d2, 'Asia/Kolkata', null, null, null, '20000000-0000-4000-a000-0000000000b1') -> 'totals' ->> 'total')::int = 0
+    and (public.report_overview(d1, d2, 'Asia/Kolkata', null, null, null, null, null, 1) -> 'totals' ->> 'total')::int = 0);
+  perform pg_temp.check('P11 Date range: a single day returns only that day''s tasks',
+    (public.report_overview('2031-03-01', '2031-03-01') -> 'totals' ->> 'total')::int = 2);
+  perform pg_temp.check('P11 Time zone: an unscheduled task created 3 March 20:00 UTC counts on 4 March in Asia/Kolkata, 3 March in UTC',
+    (select count(*) from public.report_task_facts('2031-03-04', '2031-03-04') where task_code is not null and title = 'P11 12') = 1
+    and (select count(*) from public.report_task_facts('2031-03-03', '2031-03-03') where title = 'P11 12') = 0
+    and (select count(*) from public.report_task_facts('2031-03-03', '2031-03-03', 'UTC') where title = 'P11 12') = 1);
+  t := public.report_overview('2035-01-01', '2035-01-31') -> 'totals';
+  perform pg_temp.check('P11 Empty period: every count is zero (rates are then N/A, not 0%)',
+    (t ->> 'total')::int = 0 and (t ->> 'eligible')::int = 0 and (t ->> 'cash_expected')::numeric = 0 and (t ->> 'on_time')::int = 0, t::text);
+  perform pg_temp.check('P11 Invalid ranges are rejected',
+    pg_temp.error_of($q$select public.report_overview('2031-03-07', '2031-03-01')$q$) = 'INVALID_RANGE'
+    and pg_temp.error_of($q$select public.report_overview('2000-01-01', '2031-03-01')$q$) = 'INVALID_RANGE');
+  perform pg_temp.check('P11 Long ranges are bucketed by week, then month',
+    public.report_overview('2031-01-01', '2031-06-30') ->> 'bucket' = 'week'
+    and public.report_overview('2030-01-01', '2031-06-30') ->> 'bucket' = 'month');
+
+  -- ---------------------------------------------------------------- task facts
+  select * into rec from public.report_task_facts(d1, d2) where title = 'P11 01';
+  perform pg_temp.check('P11 Facts: timings from real timestamps (accept 600 s, execution 3600 s), on time, verified check-in after 1 rejection',
+    rec.accept_seconds = 600 and rec.execution_seconds = 3600 and rec.on_time and rec.checkin_ok and rec.checkin_attempts = 2
+    and rec.checkin_rejected = 1 and rec.delivery_outcome = 'FULL' and rec.proof_count = 1 and not rec.missing_proof);
+  select * into rec from public.report_task_facts(d1, d2) where title = 'P11 03';
+  perform pg_temp.check('P11 Facts: missing timestamps give NULL durations (never 0); on time is NULL without a scheduled end',
+    rec.accept_seconds is null and rec.execution_seconds is null and rec.travel_seconds is null and rec.on_time is null
+    and rec.delivery_outcome = 'FAILED' and rec.delivered_qty = 0);
+  perform pg_temp.check('P11 Facts: cash outcome per task — full, partial, zero, open; outstanding not capped',
+    (select string_agg(cash_outcome || ':' || coalesce(outstanding_amount::text, '-'), ',' order by title)
+       from public.report_task_facts(d1, d2) where cash_outcome is not null) = 'FULL:0.00,PARTIAL:1500.00,ZERO:300.00,OPEN:-');
+  perform pg_temp.check('P11 Facts: partial delivery flagged, finished delivery without proof flagged as missing proof',
+    (select delivery_outcome || ':' || missing_proof from public.report_task_facts(d1, d2) where title = 'P11 02') = 'PARTIAL:true');
+  perform pg_temp.check('P11 Overdue: an open task past its scheduled end is overdue; its status is unchanged',
+    (select is_overdue and status = 'ASSIGNED' from public.report_task_facts('2020-01-01', '2020-01-31') where title = 'P11 10')
+    and (public.report_overview('2020-01-01', '2020-01-31') -> 'totals' ->> 'overdue')::int = 1
+    and (public.report_overview(d1, d2) -> 'totals' ->> 'overdue')::int = 0
+    and (select status from public.tasks where id = '57000000-0000-4000-a000-000000000010') = 'ASSIGNED');
+
+  -- ---------------------------------------------------------------- dimension reports
+  select * into rec from public.report_agents(d1, d2) where agent_id = a_agent;
+  perform pg_temp.check('P11 Agent report: agent A has 8 eligible, 2 completed, 2 partial, 2 failed, 1 cancelled, 2 open',
+    rec.assigned = 8 and rec.completed = 2 and rec.partial = 2 and rec.failed = 2 and rec.cancelled = 1 and rec.active = 2
+    and rec.on_time = 1 and rec.late = 1 and rec.checkins_ok = 2 and rec.checkins_rejected = 1
+    and rec.cash_expected = 3300 and rec.cash_collected = 1500 and rec.qty_delivered = 16);
+  perform pg_temp.check('P11 Agent report: averages only over measured tasks, with the sample size (accept: 1 sample; execution: 3)',
+    rec.avg_accept_seconds = 600 and rec.accept_samples = 1 and rec.execution_samples = 3 and rec.avg_execution_seconds = 3000
+    and rec.median_execution_seconds = 3600);
+  perform pg_temp.check('P11 Agent report: one row per agent; agent B has 1 task and NULL (not 0) averages',
+    (select count(*) from public.report_agents(d1, d2)) = 2
+    and (select assigned = 1 and avg_execution_seconds is null and execution_samples = 0 from public.report_agents(d1, d2) where agent_id = b_agent));
+  select * into rec from public.report_products(d1, d2);
+  perform pg_temp.check('P11 Product report: 25 assigned, 16 delivered, 9 outstanding over 3 tasks, 1 short line',
+    rec.assigned_qty = 25 and rec.delivered_qty = 16 and rec.outstanding_qty = 9 and rec.tasks = 3 and rec.partial_lines = 1);
+  select * into rec from public.report_customers(d1, d2);
+  perform pg_temp.check('P11 Customer report: totals match the overview',
+    rec.tasks = 9 and rec.completed = 2 and rec.failed = 2 and rec.cash_expected = 3300 and rec.cash_collected = 1500 and rec.qty_delivered = 16);
+  select * into rec from public.report_locations(d1, d2);
+  perform pg_temp.check('P11 Location report: volume, check-in attempts and partial deliveries',
+    rec.tasks = 9 and rec.checkin_attempts = 3 and rec.checkins_rejected = 1 and rec.deliveries_closed = 3 and rec.deliveries_partial = 1);
+
+  -- ---------------------------------------------------------------- cash, check-ins, durations
+  o := public.report_cash(d1, d2);
+  t := o -> 'totals';
+  perform pg_temp.check('P11 Cash report: expected 3,300, collected 1,500, outstanding 1,800; full 1, partial 1, zero 1, over 0',
+    (t ->> 'expected')::numeric = 3300 and (t ->> 'collected')::numeric = 1500 and (t ->> 'outstanding')::numeric = 1800
+    and (t ->> 'full')::int = 1 and (t ->> 'partial')::int = 1 and (t ->> 'zero')::int = 1 and (t ->> 'over_count')::int = 0
+    and (t ->> 'tasks_open')::int = 1 and (t ->> 'expected_open')::numeric = 700, t::text);
+  perform pg_temp.check('P11 Cash report: by payment method (UPI 1,000, cash 500)',
+    (select string_agg(x ->> 'key' || ':' || ((x ->> 'amount')::numeric)::int, ',' order by x ->> 'key') from jsonb_array_elements(o -> 'by_method') x) = 'CASH:500,UPI:1000');
+  o := public.report_checkins(d1, d2);
+  t := o -> 'totals';
+  perform pg_temp.check('P11 Check-in report: 3 attempts, 2 accepted, 1 rejected, averages over accepted only',
+    (t ->> 'attempts')::int = 3 and (t ->> 'ok')::int = 2 and (t ->> 'rejected')::int = 1 and (t ->> 'tasks_with_rejections')::int = 1
+    and (t ->> 'avg_accuracy_m')::numeric = 15 and (t ->> 'avg_distance_m')::numeric = 40 and (t ->> 'avg_rejected_distance_m')::numeric = 900, t::text);
+  perform pg_temp.check('P11 Check-in report contains no coordinates',
+    o::text !~ 'latitude|longitude|11\.3|77\.7');
+  perform pg_temp.check('P11 Durations: six stages; "Started → Completed" has 3 samples (avg 3000 s, median 3600 s, min 1800, max 3600)',
+    (select count(*) from public.report_durations(d1, d2)) = 6
+    and (select samples = 3 and avg_seconds = 3000 and median_seconds = 3600 and min_seconds = 1800 and max_seconds = 3600
+           from public.report_durations(d1, d2) where stage_order = 6)
+    and (select samples = 0 and avg_seconds is null from public.report_durations(d1, d2) where stage_order = 3));
+
+  -- ---------------------------------------------------------------- data quality
+  perform pg_temp.check('P11 Data quality: finds reversed timestamps, missing check-in and missing proof — and changes nothing',
+    (select count(*) from public.report_data_quality('2031-04-01', '2031-04-01')
+      where issue in ('Completed before it started', 'Accepted before it was assigned', 'Finished without a verified check-in')) = 3
+    and (select count(*) from public.report_data_quality(d1, d2) where issue = 'Required proof is missing') = 1
+    and (select completed_at < started_at from public.tasks where id = '57000000-0000-4000-a000-000000000013'));
+  perform pg_temp.check('P11 An inverted duration is excluded from averages rather than counted as negative or zero',
+    (select execution_seconds is null from public.report_task_facts('2031-04-01', '2031-04-01') where title = 'P11 13'));
+
+  -- ---------------------------------------------------------------- isolation
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.check('P11 Agent: organisation reports are refused or empty',
+    pg_temp.error_of(format('select public.report_overview(%L, %L)', d1, d2)) = 'NOT_ADMIN'
+    and pg_temp.error_of(format('select public.report_cash(%L, %L)', d1, d2)) = 'NOT_ADMIN'
+    and pg_temp.error_of(format('select public.report_checkins(%L, %L)', d1, d2)) = 'NOT_ADMIN'
+    and pg_temp.visible(format('select 1 from public.report_agents(%L, %L)', d1, d2)) = 0
+    and pg_temp.visible(format('select 1 from public.report_customers(%L, %L)', d1, d2)) = 0
+    and pg_temp.visible(format('select 1 from public.report_locations(%L, %L)', d1, d2)) = 0
+    and pg_temp.visible(format('select 1 from public.report_products(%L, %L)', d1, d2)) = 0
+    and pg_temp.visible(format('select 1 from public.report_durations(%L, %L)', d1, d2)) = 0
+    and pg_temp.visible(format('select 1 from public.report_data_quality(%L, %L)', d1, d2)) = 0);
+  perform pg_temp.check('P11 Agent A: task facts contain only own tasks (none of agent B''s)',
+    pg_temp.visible(format('select 1 from public.report_task_facts(%L, %L)', d1, d2)) = 9
+    and pg_temp.visible(format('select 1 from public.report_task_facts(%L, %L) where agent_id <> %L', d1, d2, a_agent)) = 0
+    and pg_temp.visible(format('select 1 from public.report_task_facts(%L, %L, %L, %L)', d1, d2, 'Asia/Kolkata', b_agent)) = 0);
+  o := public.my_task_summary(d1, d2);
+  perform pg_temp.check('P11 Agent A personal summary: own figures (8 eligible, 2 completed, 2 failed)',
+    (o ->> 'eligible')::int = 8 and (o ->> 'completed')::int = 2 and (o ->> 'failed')::int = 2 and (o ->> 'active')::int = 2, o::text);
+  perform pg_temp.act_as(agent_b);
+  o := public.my_task_summary(d1, d2);
+  perform pg_temp.check('P11 Agent B personal summary: only agent B''s single task; no cash or check-ins of agent A',
+    (o ->> 'eligible')::int = 1 and (o ->> 'completed')::int = 0
+    and pg_temp.visible(format('select 1 from public.report_task_facts(%L, %L) where expected_amount is not null or checkin_attempts > 0', d1, d2)) = 0, o::text);
+  perform pg_temp.act_as_anon();
+  perform pg_temp.check('P11 Anonymous: no reporting function can be called',
+    pg_temp.attempt(format('select public.report_overview(%L, %L)', d1, d2)) = 'ERR:42501'
+    and pg_temp.attempt(format('select 1 from public.report_task_facts(%L, %L)', d1, d2)) = 'ERR:42501'
+    and pg_temp.attempt(format('select 1 from public.report_agents(%L, %L)', d1, d2)) = 'ERR:42501'
+    and pg_temp.attempt(format('select public.my_task_summary(%L, %L)', d1, d2)) = 'ERR:42501');
+
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P11 All reporting functions are read-only (STABLE) and run with the caller''s rights (RLS applies)',
+    not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace
+                 and (proname like 'report\_%' or proname = 'my_task_summary') and (provolatile <> 's' or prosecdef)));
+  perform pg_temp.check('P11 No report reads the location history',
+    not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace
+                 and (proname like 'report\_%' or proname = 'my_task_summary') and prosrc ilike '%agent_location_events%'));
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Phase 12: AI features, storage, human review, isolation
+-- ---------------------------------------------------------------------------
+-- A task type and a location no other fixture uses, so the baselines are exact.
+insert into public.locations (id, customer_id, location_name, city, latitude, longitude, geofence_radius_meters)
+values ('31000000-0000-4000-a000-000000000012', '20000000-0000-4000-a000-0000000000a1', 'P12 Site', 'Erode', 11.2, 77.6, 100);
+
+-- History: 9 completed REPLACEMENT tasks (6 old and quick, 2 late, 1 recent and very long) and 2 failed ones.
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, scheduled_date, scheduled_end_time,
+                          assigned_at, accepted_at, started_at, completed_at)
+select ('58000000-0000-4000-a000-0000000001' || lpad(g::text, 2, '0'))::uuid, 'REPLACEMENT', 'COMPLETED',
+       '10000000-0000-4000-a000-0000000000a1', '20000000-0000-4000-a000-0000000000a1', '31000000-0000-4000-a000-000000000012',
+       'P12 history ' || g, d, '18:00',
+       (d + time '09:00') at time zone 'Asia/Kolkata', (d + time '09:30') at time zone 'Asia/Kolkata',
+       (d + s) at time zone 'Asia/Kolkata', (d + c) at time zone 'Asia/Kolkata'
+from (
+  select g, ((now() at time zone 'Asia/Kolkata')::date - off) as d, s::time, c::time
+    from (values (1, 20, '10:00', '10:30'), (2, 19, '10:00', '10:30'), (3, 18, '10:00', '10:30'), (4, 17, '10:00', '10:30'),
+                 (5, 16, '10:00', '10:30'), (6, 15, '10:00', '10:30'),
+                 (7, 12, '18:30', '19:00'), (8, 11, '18:30', '19:00'),      -- completed after the 18:00 end: late
+                 (9, 2, '10:00', '13:20')) v(g, off, s, c)                   -- 200 minutes of execution: an outlier
+) x;
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, scheduled_date, assigned_at)
+select ('58000000-0000-4000-a000-0000000002' || lpad(g::text, 2, '0'))::uuid, 'REPLACEMENT', 'FAILED',
+       '10000000-0000-4000-a000-0000000000a1', '20000000-0000-4000-a000-0000000000a1', '31000000-0000-4000-a000-000000000012',
+       'P12 failed ' || g, (now() at time zone 'Asia/Kolkata')::date - 14, now() - interval '14 days'
+from generate_series(1, 2) g;
+
+-- Open tasks to predict.
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, scheduled_date, scheduled_end_time,
+                          assigned_at, accepted_at, started_at)
+select ('58000000-0000-4000-a000-0000000000' || s)::uuid, 'REPLACEMENT', st::public.task_status,
+       '10000000-0000-4000-a000-0000000000a1', '20000000-0000-4000-a000-0000000000a1', '31000000-0000-4000-a000-000000000012',
+       'P12 open ' || s, due::date, due::time, now() - interval '3 hours', acc, sta
+from (values
+  ('a1', 'IN_PROGRESS', (now() at time zone 'Asia/Kolkata') + interval '120 minutes', now() - interval '1 hour', now() - interval '10 minutes'),
+  ('a2', 'IN_PROGRESS', (now() at time zone 'Asia/Kolkata') + interval '15 minutes', now() - interval '1 hour', now() - interval '5 minutes'),
+  ('a3', 'ASSIGNED',    (now() at time zone 'Asia/Kolkata') - interval '1 day', null, null),
+  ('a4', 'ACCEPTED',    (now() at time zone 'Asia/Kolkata') + interval '100 minutes', now() - interval '10 minutes', null),
+  ('a6', 'ARRIVED',     (now() at time zone 'Asia/Kolkata') + interval '100 minutes', now() - interval '40 minutes', null)
+) v(s, st, due, acc, sta);
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, assigned_at)
+values ('58000000-0000-4000-a000-0000000000a5', 'REPLACEMENT', 'ASSIGNED', '10000000-0000-4000-a000-0000000000a1',
+        '20000000-0000-4000-a000-0000000000a1', '31000000-0000-4000-a000-000000000012', 'P12 open a5 (unscheduled)', now() - interval '2 hours');
+insert into public.checkins (task_id, agent_id, latitude, longitude, accuracy_meters, distance_from_location_meters, geofence_radius_meters, is_within_geofence, checked_in_at)
+select '58000000-0000-4000-a000-0000000000a1', '10000000-0000-4000-a000-0000000000a1', 11.5, 77.5, 30, 800, 100, false, now() - (g || ' minutes')::interval
+from generate_series(11, 13) g;
+-- Rejected attempts on a task two days ago (inside the 7-day window whatever the time of day).
+insert into public.checkins (task_id, agent_id, latitude, longitude, accuracy_meters, distance_from_location_meters, geofence_radius_meters, is_within_geofence, checked_in_at)
+select '58000000-0000-4000-a000-000000000109', '10000000-0000-4000-a000-0000000000a1', 11.5, 77.5, 30, 800, 100, false, now() - interval '2 days' - (g || ' minutes')::interval
+from generate_series(1, 3) g;
+
+do $$
+declare
+  admin_id constant uuid := '00000000-0000-4000-a000-00000000000a';
+  agent_a  constant uuid := '00000000-0000-4000-a000-0000000000a1';
+  agent_b  constant uuid := '00000000-0000-4000-a000-0000000000b1';
+  a1 constant uuid := '58000000-0000-4000-a000-0000000000a1';
+  a2 constant uuid := '58000000-0000-4000-a000-0000000000a2';
+  loc constant uuid := '31000000-0000-4000-a000-000000000012';
+  f record;
+  r text;
+  n bigint;
+  run_id uuid;
+  rec_id uuid;
+  pred_id uuid;
+  before_task text;
+  item jsonb;
+begin
+  perform pg_temp.act_as(admin_id);
+
+  -- ---------------------------------------------------------------- features
+  select * into f from public.ai_task_features() where task_id = a1;
+  perform pg_temp.check('P12 Features: baseline from 9 finished tasks of the same type (median 30 min from this stage), task itself excluded',
+    f.baseline_scope = 'TYPE' and f.remaining_samples = 9 and f.remaining_median_minutes = 30 and f.remaining_p75_minutes = 30
+    and f.minutes_in_stage between 9.5 and 11 and f.minutes_to_due between 118 and 121 and not f.is_overdue,
+    format('scope %s n %s median %s p75 %s in-stage %s due %s', f.baseline_scope, f.remaining_samples, f.remaining_median_minutes, f.remaining_p75_minutes, f.minutes_in_stage, f.minutes_to_due));
+  perform pg_temp.check('P12 Features: failure and lateness history of the type and the location (closed tasks only: 11, not the 6 open ones)',
+    f.type_closed = 11 and f.type_failed = 2 and f.type_scheduled_completed = 9 and f.type_late = 2
+    and f.location_closed = 11 and f.location_failed = 2 and f.all_closed >= 11 and f.checkin_rejected = 3 and not f.checkin_ok,
+    format('closed %s failed %s scheduled %s late %s loc %s/%s', f.type_closed, f.type_failed, f.type_scheduled_completed, f.type_late, f.location_failed, f.location_closed));
+  select * into f from public.ai_task_features() where task_id = '58000000-0000-4000-a000-0000000000a4';
+  perform pg_temp.check('P12 Features: the baseline follows the stage (from ACCEPTED: median 60 min, 75th percentile 230 min)',
+    f.status = 'ACCEPTED' and f.remaining_median_minutes = 60 and f.remaining_p75_minutes = 230 and f.remaining_samples = 9,
+    format('median %s p75 %s n %s', f.remaining_median_minutes, f.remaining_p75_minutes, f.remaining_samples));
+  select * into f from public.ai_task_features() where task_id = '58000000-0000-4000-a000-0000000000a3';
+  perform pg_temp.check('P12 Features: an open task past its schedule is overdue (negative minutes to due)', f.is_overdue and f.minutes_to_due < 0);
+  select * into f from public.ai_task_features() where task_id = '58000000-0000-4000-a000-0000000000a5';
+  perform pg_temp.check('P12 Features: an unscheduled task has no due time (NULL, not 0) and is never overdue',
+    f.due_at is null and f.minutes_to_due is null and not f.is_overdue);
+  select * into f from public.ai_task_features() where task_id = '58000000-0000-4000-a000-0000000000a6';
+  perform pg_temp.check('P12 Features: a stage with too little history reports its small sample (model then answers INSUFFICIENT_DATA)',
+    f.status = 'ARRIVED' and f.remaining_samples < 5, f.remaining_samples::text);
+  perform pg_temp.check('P12 Features: only open tasks are returned (no prediction for completed, failed or cancelled tasks)',
+    pg_temp.visible($q$select 1 from public.ai_task_features() f join public.tasks t on t.id = f.task_id
+      where t.status not in ('ASSIGNED', 'ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'CHECKED_IN', 'IN_PROGRESS')$q$) = 0
+    and pg_temp.visible($q$select 1 from public.ai_task_features() where title like 'P12 history%' or title like 'P12 failed%'$q$) = 0);
+  perform pg_temp.check('P12 No leakage: the feature functions never read completion time of the task being predicted, nor location history',
+    not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname like 'ai\_%' and prosrc ilike '%agent_location_events%')
+    and (select prosrc from pg_proc where proname = 'ai_task_features') like '%h.id <> a.id%'
+    and (select prosrc from pg_proc where proname = 'ai_task_features') like '%where f.is_closed%');
+
+  select * into f from public.ai_agent_workload() where agent_id = '10000000-0000-4000-a000-0000000000a1';
+  perform pg_temp.check('P12 Workload: open, due-today and overdue counts per agent', f.active_tasks >= 6 and f.overdue >= 1 and f.in_field >= 3,
+    format('active %s overdue %s in field %s', f.active_tasks, f.overdue, f.in_field));
+  perform pg_temp.check('P12 Volume history: 64 days (56 past, today, 7 ahead)',
+    jsonb_array_length(public.ai_volume_history() -> 'days') = 64
+    and (public.ai_volume_history() ->> 'today')::date = (now() at time zone 'Asia/Kolkata')::date);
+
+  -- ---------------------------------------------------------------- anomalies
+  perform pg_temp.check('P12 Anomaly: repeated rejected check-ins at a location (3 or more in 7 days), worded about the place',
+    (select count(*) from public.ai_detect_anomalies() where kind = 'REPEATED_CHECKIN_REJECTION' and entity_id = loc
+        and observed >= 3 and entity_type = 'LOCATION' and detail like '% check-in attempts were rejected at this location%') = 1);
+  perform pg_temp.check('P12 Anomaly: a task that took 200 min against a 30 min median is flagged with both figures',
+    (select count(*) from public.ai_detect_anomalies() where kind = 'LONG_DURATION' and entity_label is not null
+        and observed = 200 and baseline = 30 and severity = 'high' and detail like 'Execution took about 6.7×%') = 1);
+  perform pg_temp.check('P12 Anomaly: normal tasks are not flagged; no anomaly names or targets a person',
+    (select count(*) from public.ai_detect_anomalies() where kind = 'LONG_DURATION') = 1
+    and not exists (select 1 from public.ai_detect_anomalies() where entity_type = 'AGENT' or detail ilike '%agent%' or title ilike '%agent%'));
+
+  -- ---------------------------------------------------------------- storing predictions
+  item := jsonb_build_object('prediction_type', 'TASK_DELAY_RISK', 'entity_type', 'TASK', 'entity_id', a1,
+    'value', jsonb_build_object('available', true, 'level', 'LOW', 'minutes_to_due', 120), 'confidence', 0.62,
+    'model_name', 'task-delay-risk', 'model_version', '1.0', 'feature_version', '1',
+    'explanation', jsonb_build_object('factors', jsonb_build_array('120 min remain')), 'fingerprint', 'LOW', 'ttl_minutes', 30);
+  perform public.ai_store_predictions(jsonb_build_array(item));
+  perform public.ai_store_predictions(jsonb_build_array(item));
+  perform pg_temp.check('P12 Store: an unchanged prediction is refreshed, not duplicated; model and feature versions recorded',
+    pg_temp.visible(format($q$select 1 from public.ai_predictions where entity_id = %L and prediction_type = 'TASK_DELAY_RISK'
+      and model_name = 'task-delay-risk' and model_version = '1.0' and feature_version = '1' and confidence = 0.62
+      and expires_at > now() + interval '29 minutes' and generated_at is not null$q$, a1)) = 1);
+  perform public.ai_store_predictions(jsonb_build_array(item || jsonb_build_object('fingerprint', 'HIGH',
+    'value', jsonb_build_object('available', true, 'level', 'HIGH', 'minutes_to_due', 5))));
+  perform pg_temp.check('P12 Store: a changed prediction is kept as a new row (history for evaluation); the current view shows the newest',
+    pg_temp.visible(format('select 1 from public.ai_predictions where entity_id = %L', a1)) = 2
+    and (select prediction_value ->> 'level' from public.ai_current_predictions where entity_id = a1 and prediction_type = 'TASK_DELAY_RISK') = 'HIGH'
+    and pg_temp.visible(format('select 1 from public.ai_current_predictions where entity_id = %L', a1)) = 1);
+  perform public.ai_store_predictions(jsonb_build_array(item || jsonb_build_object('prediction_type', 'TASK_ETA', 'fingerprint', 'NA:INSUFFICIENT_DATA',
+    'confidence', null, 'value', jsonb_build_object('available', false, 'reason', 'INSUFFICIENT_DATA', 'detail', 'Only 1 similar task'))));
+  perform pg_temp.check('P12 Store: "not enough data" is stored as N/A with its reason, never as a made-up value',
+    (select prediction_value ->> 'available' = 'false' and prediction_value ->> 'reason' = 'INSUFFICIENT_DATA' and confidence is null
+       from public.ai_current_predictions where entity_id = a1 and prediction_type = 'TASK_ETA'));
+  perform pg_temp.check('P12 Store: invalid types, entities and confidence values are rejected by the table',
+    pg_temp.attempt(format($q$select public.ai_store_predictions('[{"prediction_type":"MAGIC","entity_type":"TASK","entity_id":"%s","value":{},"model_name":"m","model_version":"1","feature_version":"1","fingerprint":"x"}]')$q$, a1)) = 'ERR:23514'
+    and pg_temp.attempt(format($q$select public.ai_store_predictions('[{"prediction_type":"TASK_ETA","entity_type":"TASK","entity_id":"%s","value":{},"confidence":1.7,"model_name":"m","model_version":"1","feature_version":"1","fingerprint":"x"}]')$q$, a1)) = 'ERR:23514');
+  perform pg_temp.check('P12 Freshness: admins cannot edit predictions directly; (not even an admin)',
+    pg_temp.attempt('update public.ai_predictions set confidence = 1') = 'ERR:42501');
+  perform set_config('role', 'postgres', true);
+  update public.ai_predictions set expires_at = now() - interval '1 minute' where entity_id = a1 and prediction_type = 'TASK_ETA';
+  perform pg_temp.act_as(admin_id);
+  perform pg_temp.check('P12 Freshness: a prediction past its expiry is flagged as stale in the current view',
+    (select is_stale from public.ai_current_predictions where entity_id = a1 and prediction_type = 'TASK_ETA')
+    and not (select is_stale from public.ai_current_predictions where entity_id = a1 and prediction_type = 'TASK_DELAY_RISK'));
+
+  -- ---------------------------------------------------------------- runs, flags, rate limit
+  run_id := public.ai_begin_run('PREDICTIONS', 'MANUAL', 30);
+  perform pg_temp.check('P12 Run: a second run of the same kind inside the interval is refused',
+    pg_temp.error_of($q$select public.ai_begin_run('PREDICTIONS', 'MANUAL', 30)$q$) = 'RATE_LIMITED'
+    and pg_temp.error_of($q$select public.ai_begin_run('SUMMARY', 'MANUAL', 30)$q$) = 'OK');
+  perform public.ai_finish_run(run_id, 'SUCCEEDED', 12, 3, 2);
+  perform pg_temp.check('P12 Run: counts and duration recorded; one audit entry per run (not per prediction)',
+    pg_temp.visible(format($q$select 1 from public.ai_runs where id = %L and status = 'SUCCEEDED' and predictions = 12 and insufficient = 3
+      and recommendations = 2 and duration_ms is not null and started_by = %L$q$, run_id, admin_id)) = 1
+    and pg_temp.visible(format($q$select 1 from public.audit_logs where action = 'AI_PREDICTION_GENERATED' and entity_id = %L$q$, run_id)) = 1);
+  perform public.ai_set_setting('ai_enabled', false);
+  perform pg_temp.check('P12 Flags: with AI switched off no run can start; the change is audited',
+    pg_temp.error_of($q$select public.ai_begin_run('PREDICTIONS', 'MANUAL', 0)$q$) = 'AI_DISABLED'
+    and not public.ai_feature_enabled('task_risk')
+    and pg_temp.visible(format($q$select 1 from public.audit_logs where action = 'AI_SETTINGS_CHANGED' and actor_user_id = %L
+      and new_values ->> 'key' = 'ai_enabled' and new_values ->> 'enabled' = 'false'$q$, admin_id)) = 1);
+  perform pg_temp.check('P12 Flags: with AI off, the task workflow is untouched (an admin can still save and cancel tasks)',
+    pg_temp.error_of(format($q$select public.admin_cancel_task(%L, 'P12 check with AI off')$q$, '58000000-0000-4000-a000-0000000000a6')) = 'OK');
+  perform public.ai_set_setting('ai_enabled', true);
+  perform public.ai_set_setting('eta', false);
+  perform pg_temp.check('P12 Flags: one feature can be switched off on its own; unknown settings are rejected',
+    public.ai_feature_enabled('task_risk') and not public.ai_feature_enabled('eta')
+    and pg_temp.error_of($q$select public.ai_set_setting('root_access', true)$q$) = 'UNKNOWN_SETTING');
+  perform public.ai_set_setting('eta', true);
+
+  -- ---------------------------------------------------------------- recommendations: advice only
+  item := jsonb_build_object('recommendation_type', 'TASK_ATTENTION', 'entity_type', 'TASK', 'entity_id', a2,
+    'title', 'Task needs attention', 'description', 'High estimated delay risk', 'confidence', 0.7,
+    'reasoning', jsonb_build_object('recommended_attention', 'HIGH'), 'dedupe_key', 'attention:' || a2 || ':p12',
+    'model_name', 'attention-rules', 'model_version', '1.0');
+  n := public.ai_store_recommendations(jsonb_build_array(item));
+  n := n + public.ai_store_recommendations(jsonb_build_array(item));
+  select id into rec_id from public.ai_recommendations where dedupe_key = 'attention:' || a2 || ':p12';
+  perform pg_temp.check('P12 Recommendation: created once (same event is not repeated), pending, audited', n = 1
+    and pg_temp.visible(format($q$select 1 from public.ai_recommendations where id = %L and status = 'PENDING'$q$, rec_id)) = 1
+    and pg_temp.visible(format($q$select 1 from public.audit_logs where action = 'AI_RECOMMENDATION_CREATED' and entity_id = %L$q$, rec_id)) = 1, n::text);
+  select status || '|' || priority || '|' || agent_id || '|' || coalesce(scheduled_date::text, '') || '|' || updated_at into before_task from public.tasks where id = a2;
+  r := public.ai_review_recommendation(rec_id, 'ACCEPTED', 'Called the agent');
+  perform pg_temp.check('P12 Review: accepting records who, when and the note — and changes nothing on the task', r = 'ACCEPTED'
+    and pg_temp.visible(format($q$select 1 from public.ai_recommendations where id = %L and status = 'ACCEPTED' and reviewed_by = %L
+      and reviewed_at is not null and review_notes = 'Called the agent'$q$, rec_id, admin_id)) = 1
+    and (select status || '|' || priority || '|' || agent_id || '|' || coalesce(scheduled_date::text, '') || '|' || updated_at from public.tasks where id = a2) = before_task
+    and pg_temp.visible(format($q$select 1 from public.audit_logs where action = 'AI_RECOMMENDATION_ACCEPTED' and entity_id = %L and actor_user_id = %L$q$, rec_id, admin_id)) = 1, r);
+  perform pg_temp.check('P12 Review: a reviewed recommendation cannot be reviewed again; decisions are limited to accept / reject',
+    pg_temp.error_of(format($q$select public.ai_review_recommendation(%L, 'REJECTED')$q$, rec_id)) = 'NOT_PENDING'
+    and pg_temp.error_of(format($q$select public.ai_review_recommendation(%L, 'EXECUTE')$q$, rec_id)) = 'INVALID_DECISION');
+  perform pg_temp.check('P12 The AI layer has no path to operational tables: no ai_ function writes to tasks, cash, deliveries or check-ins',
+    not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname like 'ai\_%'
+      and prosrc ~* '(insert\s+into|update|delete\s+from)\s+public\.(tasks|task_products|cash_collections|checkins|task_proofs|task_status_history|agents|customers|locations|products|profiles)\M')
+    and pg_temp.attempt('update public.ai_recommendations set status = ''ACCEPTED''') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.ai_recommendations') = 'ERR:42501');
+
+  n := public.ai_store_recommendations(jsonb_build_array(item || jsonb_build_object('dedupe_key', 'attention:' || a2 || ':p12-b', 'entity_id', '58000000-0000-4000-a000-0000000000a6')));
+  n := public.ai_store_recommendations('[]'::jsonb);
+  perform pg_temp.check('P12 Recommendation: a pending one about a task that has since been closed expires by itself',
+    (select status from public.ai_recommendations where dedupe_key = 'attention:' || a2 || ':p12-b') = 'EXPIRED');
+
+  -- ---------------------------------------------------------------- feedback and outcomes
+  select id into pred_id from public.ai_current_predictions where entity_id = a1 and prediction_type = 'TASK_DELAY_RISK';
+  perform public.ai_submit_feedback(pred_id, 'USEFUL');
+  perform public.ai_submit_feedback(pred_id, 'INCORRECT', 'Finished early');
+  perform pg_temp.check('P12 Feedback: one per admin per prediction (latest wins), audited; invalid ratings rejected; models unchanged',
+    pg_temp.visible(format($q$select 1 from public.ai_feedback where prediction_id = %L and user_id = %L and rating = 'INCORRECT' and notes = 'Finished early'$q$, pred_id, admin_id)) = 1
+    and pg_temp.visible(format('select 1 from public.ai_feedback where prediction_id = %L', pred_id)) = 1
+    and pg_temp.visible($q$select 1 from public.audit_logs where action = 'AI_FEEDBACK_SUBMITTED'$q$) = 2
+    and pg_temp.error_of(format($q$select public.ai_submit_feedback(%L, 'AMAZING')$q$, pred_id)) = 'INVALID_RATING'
+    and (select count(*) from public.ai_models) = 7 and (select bool_and(status = 'EXPERIMENTAL') from public.ai_models));
+
+  perform pg_temp.act_as(agent_a);
+  r := pg_temp.complete(a1, null, null, 'Replaced');
+  perform pg_temp.act_as(admin_id);
+  select public.ai_record_outcomes() into n;
+  perform pg_temp.check('P12 Evaluation: once the task is closed its real outcome is stored next to each prediction made for it', r = 'COMPLETED' and n >= 2
+    and (select count(*) from public.ai_predictions where entity_id = a1 and outcome ->> 'status' = 'COMPLETED' and outcome ->> 'late' = 'false' and evaluated_at is not null) >= 2
+    and (select evaluated from public.ai_evaluation where prediction_type = 'TASK_DELAY_RISK' and model_version = '1.0') >= 2, format('%s / %s', r, n));
+  perform pg_temp.check('P12 Evaluation: a new prediction after an evaluated one is a new row (an evaluated prediction is never overwritten)',
+    public.ai_store_predictions(jsonb_build_array((select jsonb_build_object('prediction_type', 'TASK_DELAY_RISK', 'entity_type', 'TASK', 'entity_id', a1,
+      'value', jsonb_build_object('available', true, 'level', 'HIGH'), 'model_name', 'task-delay-risk', 'model_version', '1.0',
+      'feature_version', '1', 'fingerprint', 'HIGH')))) = 1
+    and pg_temp.visible(format($q$select 1 from public.ai_predictions where entity_id = %L and prediction_type = 'TASK_DELAY_RISK'$q$, a1)) = 3);
+
+  perform pg_temp.check('P12 Summary storage: only the validated structure is accepted',
+    pg_temp.error_of($q$select public.ai_store_summary(current_date, '{"summary":"ok","observations":[],"attention_items":[]}', '{}', 'template')$q$) = 'OK'
+    and pg_temp.error_of($q$select public.ai_store_summary(current_date, '{"summary":"ok","observations":"<script>"}', '{}', 'template')$q$) = 'INVALID_SUMMARY');
+
+  -- ---------------------------------------------------------------- isolation
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.check('P12 Agent: sees no predictions, recommendations, summaries, runs, settings, models or feedback',
+    pg_temp.visible('select 1 from public.ai_predictions') = 0 and pg_temp.visible('select 1 from public.ai_recommendations') = 0
+    and pg_temp.visible('select 1 from public.ai_summaries') = 0 and pg_temp.visible('select 1 from public.ai_runs') = 0
+    and pg_temp.visible('select 1 from public.ai_settings') = 0 and pg_temp.visible('select 1 from public.ai_models') = 0
+    and pg_temp.visible('select 1 from public.ai_feedback') = 0 and pg_temp.visible('select 1 from public.ai_current_predictions') = 0
+    and pg_temp.visible('select 1 from public.ai_evaluation') = 0);
+  perform pg_temp.check('P12 Agent: feature, workload and anomaly functions return nothing — not even about their own tasks',
+    pg_temp.visible('select 1 from public.ai_task_features()') = 0 and pg_temp.visible('select 1 from public.ai_agent_workload()') = 0
+    and pg_temp.visible('select 1 from public.ai_detect_anomalies()') = 0);
+  perform pg_temp.check('P12 Agent: cannot store predictions or recommendations, start runs, review, give feedback or change settings',
+    pg_temp.error_of(format($q$select public.ai_store_predictions('[{"prediction_type":"TASK_ETA","entity_type":"TASK","entity_id":"%s","value":{},"model_name":"m","model_version":"1","feature_version":"1","fingerprint":"x"}]')$q$, a2)) = 'NOT_ALLOWED'
+    and pg_temp.error_of($q$select public.ai_store_recommendations('[]')$q$) = 'NOT_ALLOWED'
+    and pg_temp.error_of($q$select public.ai_begin_run('PREDICTIONS', 'MANUAL', 0)$q$) = 'NOT_ALLOWED'
+    and pg_temp.error_of($q$select public.ai_record_outcomes()$q$) = 'NOT_ALLOWED'
+    and pg_temp.error_of(format($q$select public.ai_review_recommendation(%L, 'ACCEPTED')$q$, rec_id)) = 'NOT_ADMIN'
+    and pg_temp.error_of(format($q$select public.ai_submit_feedback(%L, 'USEFUL')$q$, pred_id)) = 'NOT_ADMIN'
+    and pg_temp.error_of($q$select public.ai_set_setting('ai_enabled', false)$q$) = 'NOT_ADMIN'
+    and pg_temp.attempt($q$insert into public.ai_predictions (prediction_type, entity_type, entity_id, prediction_value, model_name, model_version, feature_version, fingerprint)
+          values ('TASK_ETA', 'TASK', gen_random_uuid(), '{}', 'm', '1', '1', 'x')$q$) = 'ERR:42501');
+  perform pg_temp.act_as_anon();
+  perform pg_temp.check('P12 Anonymous: no AI table, view or function',
+    pg_temp.attempt('select 1 from public.ai_predictions') = 'ERR:42501' and pg_temp.attempt('select 1 from public.ai_current_predictions') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.ai_task_features()') = 'ERR:42501' and pg_temp.attempt('select public.ai_store_recommendations(''[]'')') = 'ERR:42501'
+    and pg_temp.attempt($q$select public.ai_begin_run('PREDICTIONS', 'SCHEDULED', 0)$q$) = 'ERR:42501');
+
+  -- The scheduled job (service role) can compute and store, like an admin.
+  perform set_config('role', 'service_role', true);
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  perform pg_temp.check('P12 Scheduled job (service role): can read features and start a run',
+    (select count(*) from public.ai_task_features() where title like 'P12 open%') >= 3
+    and pg_temp.error_of($q$select public.ai_begin_run('PREDICTIONS', 'SCHEDULED', 0)$q$) = 'OK');
+
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P12 RLS is enabled on every AI table',
+    (select bool_and(c.relrowsecurity) from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+      where ns.nspname = 'public' and c.relkind = 'r' and c.relname like 'ai\_%'));
+end
+$$;
+
 -- Summary and verdict
 select count(*) filter (where passed) as passed, count(*) filter (where not passed) as failed from test_results;
 do $$

@@ -2,7 +2,7 @@
 
 Field task tracking: admins assign tasks (delivery, cash collection, pickup, inspection, …) at customer locations; agents travel there, check in by GPS, perform the task, submit proof, and admins verify.
 
-**Status:** Phases 1–10 — foundation, authentication & roles, database & RLS, master data, task creation & assignment, the agent task workflow, GPS check-in with server-side geofence validation, task execution (delivery quantities, cash collection, photo/document proof, failure reporting), admin monitoring (live task updates, task-scoped agent location sharing, operational map), and notifications (in-app notification centres with live updates, e-mail through a provider abstraction, preferences, reminders).
+**Status:** Phases 1–12 — foundation, authentication & roles, database & RLS, master data, task creation & assignment, the agent task workflow, GPS check-in with server-side geofence validation, task execution (delivery quantities, cash collection, photo/document proof, failure reporting), admin monitoring (live task updates, task-scoped agent location sharing, operational map), notifications (in-app notification centres with live updates, e-mail through a provider abstraction, preferences, reminders), analytics (KPI dashboard, reports with drill-down, CSV / Excel export, data-quality checks), and experimental AI decision support (delay and failure risk, operational ETA, workload forecast, anomalies, recommendations, operational summary — advisory only).
 
 ## Technology stack
 
@@ -39,7 +39,9 @@ cp .env.example .env.local
 | `EMAIL_PROVIDER` | **Never** | `resend`, or empty to keep e-mail disabled |
 | `EMAIL_API_KEY` | **Never** | API key of the e-mail provider |
 | `EMAIL_FROM` | **Never** | Verified sender, e.g. `FieldTrack <notifications@example.com>` |
-| `CRON_SECRET` | **Never** | Secret for the scheduler endpoint `/api/cron/notifications` |
+| `CRON_SECRET` | **Never** | Secret for the scheduler endpoints `/api/cron/notifications` and `/api/cron/ai` |
+| `AI_FEATURES_ENABLED`, `AI_*_ENABLED` | **Never** | Set to `false` to switch AI (or one AI feature) off for the deployment; default on |
+| `AI_SUMMARY_PROVIDER`, `ANTHROPIC_API_KEY`, `AI_SUMMARY_MODEL` | **Never** | Optional language model for the operational summary (`anthropic`); without them a built-in template is used |
 
 Only `NEXT_PUBLIC_*` variables are ever bundled into client JavaScript. The app builds without any variables set; pages that need Supabase report "not configured" instead of crashing.
 
@@ -80,7 +82,11 @@ Open `/status` to verify the Supabase connection from both the server and the br
 | `/admin/notifications` | `ADMIN` | Own notifications, delivery log of everything sent, preferences and channel status |
 | `/agent/notifications` | `AGENT` | Notification centre (also the bell in the header) |
 | `/api/cron/notifications` | Scheduler secret | Creates reminders and sends / retries queued messages |
-| `/admin/reports`, `/settings` | `ADMIN` | Placeholders for later phases |
+| `/admin/analytics`, `/admin/reports/*` | `ADMIN` | KPI dashboard and reports (tasks, agents, deliveries, cash, check-ins, customers, locations, exceptions, data quality) with export, see [docs/analytics.md](docs/analytics.md) |
+| `/admin/reports/export` | `ADMIN` | Server-generated CSV / XLSX of a report with its current filters |
+| `/admin/ai`, `/admin/ai/recommendations` | `ADMIN` | Experimental predictions, forecast, anomalies, operational summary; recommendation review — see [docs/ai.md](docs/ai.md) |
+| `/admin/settings`, `/admin/settings/ai` | `ADMIN` | AI feature switches, model registry, usage, feature list, evaluation counts |
+| `/api/cron/ai` | Scheduler secret | Refreshes predictions, anomalies and recommendations |
 | `/agent`, `/agent/tasks`, `/agent/tasks/[id]`, `/agent/history` | `AGENT` | Mobile task workflow (accept → travel → arrive → GPS check-in → start → record delivery / cash / proof → complete, or report a failure), see [docs/agent-workflow.md](docs/agent-workflow.md), [docs/gps-checkin.md](docs/gps-checkin.md) and [docs/task-execution.md](docs/task-execution.md) |
 | `/auth/signout` | — | Forced sign-out for inactive/unprovisioned accounts |
 
@@ -149,7 +155,9 @@ docs/
 ├─ master-data.md, tasks.md, agent-workflow.md, gps-checkin.md
 ├─ task-execution.md     # delivery, cash, proof, completion
 ├─ monitoring.md         # realtime monitoring, location sharing, map
-└─ notifications.md      # notification events, outbox, providers, scheduler
+├─ notifications.md      # notification events, outbox, providers, scheduler
+├─ analytics.md          # KPI definitions, reports, exports, time zone
+└─ ai.md                 # predictions, methods, data requirements, privacy, provider
 ```
 
 Domain code goes in `src/features/<domain>/` (components, actions, queries, schemas) as each phase adds it.
@@ -167,6 +175,33 @@ Full reference: [docs/notifications.md](docs/notifications.md).
 - **Scheduler (production):** call `GET /api/cron/notifications` with `Authorization: Bearer $CRON_SECRET` every few minutes (Vercel Cron or any external scheduler). It creates reminders and retries queued messages. No `vercel.json` is committed — see the doc for the snippet and the Hobby-plan limit.
 - **Local development:** nothing to configure for in-app notifications. Trigger the scheduler by hand with `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/notifications`.
 - **Troubleshooting:** the Settings tab of `/admin/notifications` shows which channels are enabled and why not; the Delivery log shows each message with its attempts and error.
+
+## Analytics and reports
+
+Full reference, including every formula: [docs/analytics.md](docs/analytics.md).
+
+- **Architecture:** operational tables → `report_task_facts()` (one row per task) → `report_*()` SQL aggregations → server-only analytics service → pages and exports. No second database, no cache, no materialized views.
+- **Period:** a task is counted on its scheduled date (creation date if unscheduled) in the business time zone (`siteConfig.timeZone`). Presets from Today to Last month, plus a custom range.
+- **Filters:** agent, customer, location, task type, status, priority — in the URL, shared by every number, table and export on the page.
+- **Key formulas:** completion rate = completed ÷ eligible (all statuses except Draft, Cancelled, Rescheduled); on-time rate = completed by the scheduled end ÷ completed tasks with a scheduled end; fulfilment = delivered ÷ assigned on closed deliveries; collection rate = collected ÷ expected on closed cash tasks. A rate with nothing to divide by is **N/A**, never 0%.
+- **Drill-down:** every KPI opens the task report filtered to exactly the rows it counted; each row opens the task.
+- **Exports:** CSV and Excel, generated on the server with the current filters, admin-only, capped at 10,000 rows, formula-safe.
+- **Security:** reporting functions run with the caller's rights (RLS applies) and are read-only; organisation-wide reports require an admin. Agents see only their own summary on their home screen.
+- **Privacy:** no report uses the location history; check-in analytics are aggregates without coordinates.
+- **Data quality:** `/admin/reports/data-quality` lists inconsistent records; nothing is corrected automatically.
+
+## AI decision support
+
+Full reference: [docs/ai.md](docs/ai.md).
+
+- **Advisory only.** AI estimates and recommends; it never changes a task, assignment, schedule, payment or status. Accepting a recommendation only records that an admin acknowledged it.
+- **Experimental.** Version 1 uses transparent statistics over the last 180 days of closed tasks (medians, quartiles, smoothed frequencies, same-weekday averages, baseline rules), not trained models. No accuracy is claimed; outcomes are recorded so it can be measured later.
+- **Predictions:** task delay risk, task failure risk, operational ETA (no traffic data), 7-day workload forecast, agent workload pressure, operational anomalies. Each shows its reasons, a confidence (how much history supports it), the model version and when it was generated.
+- **Not enough data → N/A** with the reason; nothing is invented.
+- **Summary:** built-in template by default. Optionally Claude through the Anthropic API (`AI_SUMMARY_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`): it receives aggregate figures only — no names, contact details, coordinates or ids — and its output is schema-checked and number-checked before display, with the template as fallback.
+- **Switches:** environment (`AI_FEATURES_ENABLED`, `AI_*_ENABLED`) and `/admin/settings/ai`. With AI off, the rest of the app is unaffected.
+- **Security:** admin-only; `ai_*` tables are read-only for admins under RLS and invisible to agents; writes go through database functions; keys are server-only. Location history is not an input.
+- **Scheduler:** call `GET /api/cron/ai` with `Authorization: Bearer $CRON_SECRET` every 15–30 minutes; otherwise predictions refresh when an admin presses **Refresh predictions**.
 
 ## Security notes
 

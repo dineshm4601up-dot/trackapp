@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TaskInsightsCard } from "@/features/ai/components/task-insights-card";
+import { getTaskInsights } from "@/features/ai/queries";
 import { CheckInSummaryCard } from "@/features/checkin/components/check-in-summary-card";
 import { getCheckInSummary } from "@/features/checkin/queries";
 import { CashSummary } from "@/features/execution/components/execution-summary";
@@ -20,7 +22,7 @@ import { taskBindings, TRACKED_STATUSES } from "@/features/monitoring/config";
 import { getTaskMonitor } from "@/features/monitoring/queries";
 import { CancelTaskButton } from "@/features/tasks/components/cancel-task-button";
 import { PriorityText, TaskStatusBadge, taskTypeLabel } from "@/features/tasks/components/task-badges";
-import { DONE_STATUSES, isCancellable, isEditable, priorityLabel, TASK_STATUS_META, TASK_TYPE_META } from "@/features/tasks/constants";
+import { ACTIVE_STATUSES, DONE_STATUSES, isCancellable, isEditable, priorityLabel, TASK_STATUS_META, TASK_TYPE_META } from "@/features/tasks/constants";
 import { TaskStatusTimeline } from "@/features/tasks/components/task-status-timeline";
 import { getTask, getTaskHistory } from "@/features/tasks/queries";
 import { requireAdmin } from "@/lib/auth/session";
@@ -30,17 +32,19 @@ import { formatCalendarDate, formatDateTime, formatMoney, formatWallTime, mapsSe
 export const metadata: Metadata = { title: "Task" };
 
 export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]">) {
-  await requireAdmin();
+  const { user } = await requireAdmin();
   const [{ id }, searchParams] = await Promise.all([props.params, props.searchParams]);
   const task = await getTask(id);
   if (!task) notFound();
   const meta = TASK_TYPE_META[task.task_type];
-  const [history, checkIn, proofs, cash, monitor] = await Promise.all([
+  const [history, checkIn, proofs, cash, monitor, ai] = await Promise.all([
     getTaskHistory(task.id),
     getCheckInSummary(task.id),
     getTaskProofs(task.id),
     meta.execution === "cash" ? getCashCollection(task.id) : Promise.resolve(null),
     getTaskMonitor(task.id),
+    // Stored estimates only (no model runs while the page renders); open tasks only.
+    ACTIVE_STATUSES.includes(task.status) ? getTaskInsights(task.id, user.id).catch(() => null) : Promise.resolve(null),
   ]);
   const tracked = (TRACKED_STATUSES as readonly string[]).includes(task.status);
   // One timeline: status changes plus the execution events that have no status of their own.
@@ -285,6 +289,8 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
               />
             </CardContent>
           </Card>
+
+          {ai && <TaskInsightsCard taskId={task.id} insights={ai.insights} feedback={ai.feedback} />}
 
           <CheckInSummaryCard summary={checkIn} site={task.location} />
 

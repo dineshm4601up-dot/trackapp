@@ -140,3 +140,24 @@
     @apply font-sans;
   }
 }
+/* Charts (Phase 11). Series colours are a validated categorical set in a fixed
+   order — completed, partial, open, failed — with dark steps chosen for the
+   dark surface. Text never uses these colours. */
+:root {
+  --viz-completed: #1baf7a;
+  --viz-partial: #eda100;
+  --viz-open: #2a78d6;
+  --viz-failed: #e34948;
+  --viz-bar: #2a78d6;
+  --viz-track: #cde2fb;
+  --viz-grid: #e7e6e3;
+}
+.dark {
+  --viz-completed: #199e70;
+  --viz-partial: #c98500;
+  --viz-open: #3987e5;
+  --viz-failed: #e66767;
+  --viz-bar: #3987e5;
+  --viz-track: #184f95;
+  --viz-grid: #383835;
+}
