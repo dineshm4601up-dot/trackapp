@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bell,
   Building2,
   ChartColumn,
   ClipboardList,
@@ -40,7 +41,8 @@ export const adminNavGroups: NavGroup[] = [
     label: "Operations",
     items: [
       { title: "Tasks", href: "/admin/tasks", icon: ClipboardList },
-      { title: "Monitoring", href: "/admin/monitoring", icon: Activity, plannedPhase: 11 },
+      { title: "Monitoring", href: "/admin/monitoring", icon: Activity },
+      { title: "Notifications", href: "/admin/notifications", icon: Bell },
       { title: "Reports", href: "/admin/reports", icon: ChartColumn, plannedPhase: 12 },
     ],
   },

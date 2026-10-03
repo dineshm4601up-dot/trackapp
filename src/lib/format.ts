@@ -102,3 +102,12 @@ export function formatCoordinate(value: number | null | undefined) {
 export function mapsSearchUrl(latitude: number | string, longitude: number | string) {
   return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
+
+/** UTC offset of the business time zone right now, e.g. "+05:30" (for day-boundary filters). */
+export function businessUtcOffset() {
+  const part = new Intl.DateTimeFormat("en-US", { timeZone: siteConfig.timeZone, timeZoneName: "longOffset" })
+    .formatToParts(new Date())
+    .find((p) => p.type === "timeZoneName")?.value;
+  const match = /GMT([+-]\d{2}:\d{2})/.exec(part ?? "");
+  return match ? match[1]! : "+00:00";
+}

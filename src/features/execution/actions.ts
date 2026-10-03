@@ -17,6 +17,7 @@ import {
 } from "@/features/execution/config";
 import { PAYMENT_METHODS } from "@/features/tasks/constants";
 import { requireAgent } from "@/lib/auth/session";
+import { kickCommunications } from "@/lib/communication/dispatcher";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -115,6 +116,7 @@ export async function completeMyTask(input: CompleteInput): Promise<CompleteResu
   }
 
   const result = z.object({ status: z.enum(["COMPLETED", "PARTIALLY_COMPLETED"]), summary: z.string() }).parse(data);
+  kickCommunications();
   revalidatePath("/agent", "layout");
   revalidatePath(`/admin/tasks/${taskId}`);
   return {

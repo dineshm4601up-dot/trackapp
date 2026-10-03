@@ -35,6 +35,8 @@ FAILED ◄─Report a problem (reason)── from ACCEPTED, ON_THE_WAY, ARRIVED,
 | Review & complete | `completed_at`, `completion_notes`; outcome decided by `agent_complete_task` | summary of quantities / amounts; reason required for a shortfall — see [task-execution.md](task-execution.md) |
 | Report a problem | `failure_reason` = reason (+ note) | reason required (+ note; note required for "Other") |
 
+From **Start Travel** until the task ends, the task screen shows a **Location Sharing** indicator and shares the agent's location for that task only (see [monitoring.md](monitoring.md)).
+
 Exactly one primary action is shown per status. At `ARRIVED` it is **Check In at Location** (GPS check-in); "Arrived" itself is self-reported.
 
 Agents cannot cancel; cancellation stays with admins, who can now cancel up to `ARRIVED` (before any verified on-site work).

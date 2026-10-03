@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CircleCheck, Pencil, Plus } from "lucide-react";
 
+import { LiveUpdates } from "@/components/shared/live-updates";
 import { PageHeader } from "@/components/shared/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,9 @@ import { getCheckInSummary } from "@/features/checkin/queries";
 import { CashSummary } from "@/features/execution/components/execution-summary";
 import { ProofGallery } from "@/features/execution/components/proof-gallery";
 import { getCashCollection, getTaskProofs } from "@/features/execution/queries";
+import { LocationAge } from "@/features/monitoring/components/live-time";
+import { taskBindings, TRACKED_STATUSES } from "@/features/monitoring/config";
+import { getTaskMonitor } from "@/features/monitoring/queries";
 import { CancelTaskButton } from "@/features/tasks/components/cancel-task-button";
 import { PriorityText, TaskStatusBadge, taskTypeLabel } from "@/features/tasks/components/task-badges";
 import { DONE_STATUSES, isCancellable, isEditable, priorityLabel, TASK_STATUS_META, TASK_TYPE_META } from "@/features/tasks/constants";
@@ -31,12 +35,34 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
   const task = await getTask(id);
   if (!task) notFound();
   const meta = TASK_TYPE_META[task.task_type];
-  const [history, checkIn, proofs, cash] = await Promise.all([
+  const [history, checkIn, proofs, cash, monitor] = await Promise.all([
     getTaskHistory(task.id),
     getCheckInSummary(task.id),
     getTaskProofs(task.id),
     meta.execution === "cash" ? getCashCollection(task.id) : Promise.resolve(null),
+    getTaskMonitor(task.id),
   ]);
+  const tracked = (TRACKED_STATUSES as readonly string[]).includes(task.status);
+  // One timeline: status changes plus the execution events that have no status of their own.
+  const timeline = [
+    ...history.map((entry) => ({ kind: "status" as const, at: entry.changed_at, entry })),
+    ...proofs.map((proof) => ({
+      kind: "event" as const,
+      at: proof.created_at,
+      id: `proof-${proof.id}`,
+      text: `${proof.proof_type === "PHOTO" ? "Photo" : "Document"} proof uploaded${proof.description ? ` — ${proof.description}` : ""}`,
+    })),
+    ...(cash?.collected_at
+      ? [
+          {
+            kind: "event" as const,
+            at: cash.collected_at,
+            id: "cash",
+            text: `Cash collection recorded — ${formatMoney(numericText(cash.collected_amount, 2))} of ${formatMoney(numericText(cash.expected_amount, 2))}`,
+          },
+        ]
+      : []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
   // delivered_quantity defaults to 0: it is only meaningful once a delivery was completed.
   const deliveryRecorded = meta.execution === "delivery" && DONE_STATUSES.includes(task.status);
   const justCreated = searchParams.created === "1";
@@ -92,6 +118,7 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
         description={`${task.task_code} · ${taskTypeLabel(task.task_type)}`}
         actions={
           <>
+            <LiveUpdates channel={`admin-task-${task.id}`} bindings={taskBindings(task.id)} />
             {isEditable(task.status) && (
               <Button variant="outline" asChild>
                 <Link href={`/admin/tasks/${task.id}/edit`}>
@@ -117,6 +144,7 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
                   ["Task code", <span key="c" className="font-mono">{task.task_code}</span>],
                   ["Task type", taskTypeLabel(task.task_type)],
                   ["Status", <TaskStatusBadge key="s" status={task.status} />],
+                  ["Last updated", formatDateTime(task.updated_at)],
                   ["Priority", <span key="p"><PriorityText priority={task.priority} /> · {priorityLabel(task.priority).replace(/^\d — /, "")}</span>],
                   ["Title", task.title],
                   ...(meta.execution === "cash"
@@ -192,7 +220,7 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
 
           <Card>
             <CardHeader>
-              <CardTitle>Proof</CardTitle>
+              <CardTitle>Proof{proofs.length > 0 && ` (${proofs.length})`}</CardTitle>
             </CardHeader>
             <CardContent>
               <ProofGallery proofs={proofs} emptyText="No photos or documents uploaded." />
@@ -205,17 +233,27 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
             </CardHeader>
             <CardContent>
               <ol className="space-y-3">
-                {history.map((entry) => (
-                  <li key={entry.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-                    {entry.old_status ? <TaskStatusBadge status={entry.old_status} /> : <span className="text-muted-foreground">Created</span>}
-                    <span aria-hidden>→</span>
-                    <TaskStatusBadge status={entry.new_status} />
-                    <span className="text-muted-foreground">
-                      by {entry.actor?.full_name ?? entry.actor?.email ?? "system"} · {formatDateTime(entry.changed_at)}
-                    </span>
-                    {entry.reason && <span className="w-full text-muted-foreground">“{entry.reason}”</span>}
-                  </li>
-                ))}
+                {timeline.map((item) =>
+                  item.kind === "event" ? (
+                    <li key={item.id} className="text-sm">
+                      {item.text} <span className="text-muted-foreground">· {formatDateTime(item.at)}</span>
+                    </li>
+                  ) : (
+                    <li key={item.entry.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+                      {item.entry.old_status ? (
+                        <TaskStatusBadge status={item.entry.old_status} />
+                      ) : (
+                        <span className="text-muted-foreground">Created</span>
+                      )}
+                      <span aria-hidden>→</span>
+                      <TaskStatusBadge status={item.entry.new_status} />
+                      <span className="text-muted-foreground">
+                        by {item.entry.actor?.full_name ?? item.entry.actor?.email ?? "system"} · {formatDateTime(item.entry.changed_at)}
+                      </span>
+                      {item.entry.reason && <span className="w-full text-muted-foreground">“{item.entry.reason}”</span>}
+                    </li>
+                  ),
+                )}
               </ol>
             </CardContent>
           </Card>
@@ -249,6 +287,34 @@ export default async function TaskDetailPage(props: PageProps<"/admin/tasks/[id]
           </Card>
 
           <CheckInSummaryCard summary={checkIn} site={task.location} />
+
+          {(tracked || monitor?.last_location_at) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Last known location</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p>
+                  <LocationAge at={monitor?.last_location_at ?? null} accuracy={monitor?.last_accuracy_meters} tracked={tracked} />
+                </p>
+                {monitor?.last_location_at && monitor.last_latitude !== null && monitor.last_longitude !== null && (
+                  <a
+                    href={mapsSearchUrl(monitor.last_latitude, monitor.last_longitude)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    View on map
+                  </a>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {tracked
+                    ? "Shared by the agent while this task is active and their task screen is open."
+                    : "Location sharing stopped when the task ended."}
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

@@ -9,10 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { setAgentActive } from "@/features/agents/actions";
 import { listAgents, type AgentListRow } from "@/features/agents/queries";
+import { LocationAge, TimeAgo } from "@/features/monitoring/components/live-time";
+import { TRACKED_STATUSES } from "@/features/monitoring/config";
+import { getAgentActivity, type AgentBoardRow } from "@/features/monitoring/queries";
+import { TaskStatusBadge } from "@/features/tasks/components/task-badges";
 import { formatDate } from "@/lib/format";
 import { listQuery, type ListParams } from "@/lib/list-params";
 
-const columns: Column<AgentListRow>[] = [
+type Row = AgentListRow & { activity?: AgentBoardRow };
+
+const isTracked = (a: Row) =>
+  a.activity?.current_task_status != null && (TRACKED_STATUSES as readonly string[]).includes(a.activity.current_task_status);
+
+const columns: Column<Row>[] = [
   { header: "Employee code", cell: (a) => a.employee_code ?? "—", cellClassName: "font-mono text-xs" },
   { header: "Name", cell: (a) => <span className="font-medium">{a.full_name ?? "—"}</span>, hideOnMobile: true },
   { header: "Email", cell: (a) => a.email ?? "—" },
@@ -26,11 +35,40 @@ const columns: Column<AgentListRow>[] = [
       </span>
     ),
   },
-  { header: "Created", cell: (a) => formatDate(a.created_at), className: "hidden lg:table-cell" },
+  {
+    header: "Current task",
+    cell: (a) =>
+      a.activity?.current_task_id && a.activity.current_task_status ? (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <Link href={`/admin/tasks/${a.activity.current_task_id}`} className="font-mono text-xs hover:underline">
+            {a.activity.current_task_code}
+          </Link>
+          <TaskStatusBadge status={a.activity.current_task_status} />
+        </span>
+      ) : (
+        <span className="text-muted-foreground">None</span>
+      ),
+  },
+  {
+    // Time only: precise positions are shown on the monitoring map, not here.
+    header: "Last location update",
+    cell: (a) =>
+      isTracked(a) ? (
+        <LocationAge at={a.activity?.last_location_at ?? null} />
+      ) : a.activity?.last_location_at ? (
+        <TimeAgo at={a.activity.last_location_at} />
+      ) : (
+        "—"
+      ),
+    className: "hidden xl:table-cell",
+  },
+  { header: "Created", cell: (a) => formatDate(a.created_at), className: "hidden 2xl:table-cell" },
 ];
 
 export async function AgentList({ params }: { params: ListParams }) {
-  const { rows, total } = await listAgents(params);
+  const { rows: agents, total } = await listAgents(params);
+  const activity = await getAgentActivity(agents.map((a) => a.id));
+  const rows: Row[] = agents.map((a) => ({ ...a, activity: activity.get(a.id) }));
 
   if (rows.length === 0) {
     return (

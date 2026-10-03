@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { AGENT_TARGETS, TASK_STATUSES, type TaskStatus } from "@/features/tasks/constants";
 import { requireAgent } from "@/lib/auth/session";
+import { kickCommunications } from "@/lib/communication/dispatcher";
 import { createClient } from "@/lib/supabase/server";
 
 const transitionSchema = z.object({
@@ -66,6 +67,7 @@ export async function transitionMyTask(input: TransitionInput): Promise<Transiti
     return { ok: false, code: error.message ?? "UNKNOWN", message: known ?? "The task could not be updated." };
   }
 
+  kickCommunications();
   revalidatePath("/agent", "layout");
   revalidatePath(`/admin/tasks/${taskId}`);
   return { ok: true, status: data, message: SUCCESS[data] ?? "Task updated." };

@@ -9,16 +9,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SignOutMenuItem } from "@/features/auth/components/sign-out-button";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
+import type { BellNotifications } from "@/features/notifications/queries";
 import type { Profile } from "@/lib/auth/profile";
 
-export function AdminHeader({ profile }: { profile: Profile }) {
+export function AdminHeader({ profile, notifications }: { profile: Profile; notifications: BellNotifications }) {
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:px-6">
       <AdminMobileNav />
       <div className="lg:hidden">
         <Brand href="/admin" />
       </div>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        <NotificationBell notifications={notifications} href="/admin/notifications" />
         <DropdownMenu>
           <DropdownMenuTrigger
             className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"

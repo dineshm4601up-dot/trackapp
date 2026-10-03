@@ -286,7 +286,8 @@ begin
   -- Location events
   r := pg_temp.attempt($q$insert into public.agent_location_events (agent_id, task_id, latitude, longitude)
                          values ('10000000-0000-4000-a000-0000000000a1', '50000000-0000-4000-a000-0000000000a1', 11.1, 77.1)$q$);
-  perform pg_temp.check('Agent can record own location event', r = 'OK:1', r);
+  -- Phase 9: location events are written only through agent_record_location().
+  perform pg_temp.check('Agent cannot insert a location event directly (function only)', r = 'ERR:42501', r);
   r := pg_temp.attempt($q$insert into public.agent_location_events (agent_id, latitude, longitude)
                          values ('10000000-0000-4000-a000-0000000000b1', 11.1, 77.1)$q$);
   perform pg_temp.check('Agent cannot record a location event as Agent B', r = 'ERR:42501', r);
@@ -1093,6 +1094,562 @@ begin
   perform pg_temp.check('P8 Admin: expected amount must be positive', r = 'AMOUNT_INVALID', r);
 
   perform set_config('role', 'postgres', true);
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Phase 9: task-scoped location events, monitoring views, realtime publication
+-- ---------------------------------------------------------------------------
+insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, assigned_at)
+select ('55000000-0000-4000-a000-0000000000' || s)::uuid, 'SURVEY', st::public.task_status, ag::uuid,
+       '20000000-0000-4000-a000-0000000000a1', '30000000-0000-4000-a000-0000000000a1', 'P9 ' || s, now()
+from (values
+  ('01', 'ON_THE_WAY',  '10000000-0000-4000-a000-0000000000a1'),
+  ('02', 'IN_PROGRESS', '10000000-0000-4000-a000-0000000000a1'),
+  ('03', 'COMPLETED',   '10000000-0000-4000-a000-0000000000a1'),
+  ('04', 'FAILED',      '10000000-0000-4000-a000-0000000000a1'),
+  ('05', 'CANCELLED',   '10000000-0000-4000-a000-0000000000a1'),
+  ('06', 'ON_THE_WAY',  '10000000-0000-4000-a000-0000000000b1'),
+  ('07', 'ASSIGNED',    '10000000-0000-4000-a000-0000000000a1'),
+  ('08', 'ARRIVED',     '10000000-0000-4000-a000-0000000000a1'),
+  ('09', 'CHECKED_IN',  '10000000-0000-4000-a000-0000000000a1'),
+  ('10', 'ACCEPTED',    '10000000-0000-4000-a000-0000000000a1'),
+  ('11', 'PARTIALLY_COMPLETED', '10000000-0000-4000-a000-0000000000a1')
+) v(s, st, ag);
+
+-- 'RECORDED' / 'THROTTLED' / 'LOW_ACCURACY', or the error code.
+create function pg_temp.loc(p_task uuid, p_lat double precision, p_lng double precision,
+  p_acc double precision default 15, p_at timestamptz default clock_timestamp())
+returns text language plpgsql as $$
+begin
+  return public.agent_record_location(p_task, p_lat, p_lng, p_acc, p_at) ->> 'result';
+exception when others then
+  return sqlerrm;
+end $$;
+
+-- Lets the rate-limit window pass (as owner; agents cannot modify events).
+create function pg_temp.age_events() returns void language sql security definer as $$
+  update public.agent_location_events set recorded_at = recorded_at - interval '5 minutes'
+$$;
+
+do $$
+declare
+  admin_id constant uuid := '00000000-0000-4000-a000-00000000000a';
+  agent_a  constant uuid := '00000000-0000-4000-a000-0000000000a1';
+  agent_b  constant uuid := '00000000-0000-4000-a000-0000000000b1';
+  inactive constant uuid := '00000000-0000-4000-a000-0000000000c1';
+  a_agent  constant uuid := '10000000-0000-4000-a000-0000000000a1';
+  t_way    constant uuid := '55000000-0000-4000-a000-000000000001';
+  t_work   constant uuid := '55000000-0000-4000-a000-000000000002';
+  t_b      constant uuid := '55000000-0000-4000-a000-000000000006';
+  r text;
+  n bigint;
+  i int;
+begin
+  -- Ownership and task state (earlier fixtures hold fresh events: let the rate-limit window pass)
+  perform pg_temp.age_events();
+  perform pg_temp.act_as(agent_a);
+  r := pg_temp.loc(t_way, 11.3412, 77.7178);
+  perform pg_temp.check('P9 Agent A records location for own ON_THE_WAY task', r = 'RECORDED', r);
+  perform pg_temp.check('P9 Event stored with the session''s agent, server time, rounded values, no device id',
+    pg_temp.visible(format($q$select 1 from public.agent_location_events where task_id = %L and agent_id = %L
+      and latitude = 11.3412 and longitude = 77.7178 and accuracy_meters = 15 and device_id is null
+      and recorded_at between now() - interval '1 minute' and clock_timestamp()$q$, t_way, a_agent)) = 1);
+
+  -- Rate limit
+  r := pg_temp.loc(t_way, 11.3413, 77.7179);
+  perform pg_temp.check('P9 Second event inside the minimum interval is throttled', r = 'THROTTLED', r);
+  for i in 1..12 loop
+    perform pg_temp.loc(t_way, 11.34 + i * 0.0001, 77.71);
+  end loop;
+  perform pg_temp.check('P9 Burst of 12 rapid requests stores nothing more (1 event)',
+    pg_temp.visible(format('select 1 from public.agent_location_events where task_id = %L', t_way)) = 1);
+  r := pg_temp.loc(t_work, 11.3412, 77.7178);
+  perform pg_temp.check('P9 Rate limit is per agent, not per task (other task also throttled)', r = 'THROTTLED', r);
+
+  perform pg_temp.age_events();
+  r := pg_temp.loc(t_work, 11.3412, 77.7178);
+  perform pg_temp.check('P9 IN_PROGRESS task: location allowed (after the interval)', r = 'RECORDED', r);
+  perform pg_temp.age_events();
+  r := pg_temp.loc('55000000-0000-4000-a000-000000000008', 11.3412, 77.7178);
+  perform pg_temp.check('P9 ARRIVED task: location allowed', r = 'RECORDED', r);
+  perform pg_temp.age_events();
+  r := pg_temp.loc('55000000-0000-4000-a000-000000000009', 11.3412, 77.7178);
+  perform pg_temp.check('P9 CHECKED_IN task: location allowed', r = 'RECORDED', r);
+  perform pg_temp.age_events();
+
+  perform pg_temp.check('P9 COMPLETED / PARTIALLY_COMPLETED / FAILED / CANCELLED tasks: location rejected',
+    pg_temp.loc('55000000-0000-4000-a000-000000000003', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE'
+    and pg_temp.loc('55000000-0000-4000-a000-000000000011', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE'
+    and pg_temp.loc('55000000-0000-4000-a000-000000000004', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE'
+    and pg_temp.loc('55000000-0000-4000-a000-000000000005', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE');
+  perform pg_temp.check('P9 ASSIGNED / ACCEPTED tasks (not yet travelling): location rejected',
+    pg_temp.loc('55000000-0000-4000-a000-000000000007', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE'
+    and pg_temp.loc('55000000-0000-4000-a000-000000000010', 11.34, 77.71) = 'TRACKING_NOT_ACTIVE');
+  r := pg_temp.loc(t_b, 11.34, 77.71);
+  perform pg_temp.check('P9 Agent A cannot record location for Agent B''s task', r = 'TASK_NOT_FOUND', r);
+  r := pg_temp.loc('55000000-0000-4000-a000-0000000000ff', 11.34, 77.71);
+  perform pg_temp.check('P9 Unknown task id rejected', r = 'TASK_NOT_FOUND', r);
+
+  -- Coordinate / accuracy / timestamp tampering
+  perform pg_temp.check('P9 Invalid latitude / longitude rejected',
+    pg_temp.loc(t_way, 91, 77.71) = 'INVALID_COORDINATES' and pg_temp.loc(t_way, -90.01, 77.71) = 'INVALID_COORDINATES'
+    and pg_temp.loc(t_way, 11.34, 181) = 'INVALID_COORDINATES' and pg_temp.loc(t_way, 11.34, -180.5) = 'INVALID_COORDINATES'
+    and pg_temp.loc(t_way, null, 77.71) = 'INVALID_COORDINATES');
+  perform pg_temp.check('P9 NaN / Infinity coordinates rejected',
+    pg_temp.loc(t_way, 'NaN', 77.71) = 'INVALID_COORDINATES' and pg_temp.loc(t_way, 11.34, 'NaN') = 'INVALID_COORDINATES'
+    and pg_temp.loc(t_way, 'Infinity', 77.71) = 'INVALID_COORDINATES' and pg_temp.loc(t_way, 11.34, '-Infinity') = 'INVALID_COORDINATES');
+  perform pg_temp.check('P9 Negative / NaN / Infinity / missing accuracy rejected',
+    pg_temp.loc(t_way, 11.34, 77.71, -1) = 'INVALID_ACCURACY' and pg_temp.loc(t_way, 11.34, 77.71, 'NaN') = 'INVALID_ACCURACY'
+    and pg_temp.loc(t_way, 11.34, 77.71, 'Infinity') = 'INVALID_ACCURACY' and pg_temp.loc(t_way, 11.34, 77.71, null) = 'INVALID_ACCURACY');
+  perform pg_temp.check('P9 Stale and future-dated device timestamps rejected',
+    pg_temp.loc(t_way, 11.34, 77.71, 15, clock_timestamp() - interval '10 minutes') = 'STALE_LOCATION'
+    and pg_temp.loc(t_way, 11.34, 77.71, 15, clock_timestamp() + interval '10 minutes') = 'STALE_LOCATION'
+    and pg_temp.loc(t_way, 11.34, 77.71, 15, null) = 'STALE_LOCATION');
+  r := pg_temp.loc(t_way, 11.34, 77.71, 5000);
+  perform pg_temp.check('P9 Very inaccurate reading is ignored, not stored', r = 'LOW_ACCURACY'
+    and pg_temp.visible(format('select 1 from public.agent_location_events where task_id = %L', t_way)) = 1, r);
+  r := pg_temp.attempt(format($q$select public.agent_record_location(p_task_id => %L, p_latitude => 11.34, p_longitude => 77.71,
+    p_accuracy => 15, p_captured_at => now(), p_agent_id => '10000000-0000-4000-a000-0000000000b1')$q$, t_way));
+  perform pg_temp.check('P9 Client-supplied agent_id / recorded_at cannot be passed (no such parameters)', r = 'ERR:42883'
+    and pg_temp.attempt(format($q$select public.agent_record_location(p_task_id => %L, p_latitude => 11.34, p_longitude => 77.71,
+      p_accuracy => 15, p_captured_at => now(), p_recorded_at => '2000-01-01')$q$, t_way)) = 'ERR:42883', r);
+
+  -- Append-only
+  perform pg_temp.check('P9 Agent cannot insert / update / delete location events directly',
+    pg_temp.attempt(format($q$insert into public.agent_location_events (agent_id, task_id, latitude, longitude)
+      values (%L, %L, 11.1, 77.1)$q$, a_agent, t_way)) = 'ERR:42501'
+    and pg_temp.attempt('update public.agent_location_events set latitude = 0') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.agent_location_events') = 'ERR:42501');
+
+  -- Location events never change a task
+  perform pg_temp.check('P9 Location events do not check in or complete a task',
+    pg_temp.visible(format($q$select 1 from public.tasks where id = %L and status = 'ON_THE_WAY'$q$, t_way)) = 1
+    and pg_temp.visible(format('select 1 from public.checkins where task_id = %L', t_way)) = 0);
+
+  -- Tracking stops with the task (server side)
+  r := pg_temp.complete(t_work, null, null, 'Survey done');
+  perform pg_temp.check('P9 Task completed through the execution function', r = 'COMPLETED', r);
+  r := pg_temp.loc(t_work, 11.3412, 77.7178);
+  perform pg_temp.check('P9 After completion a new location event is rejected', r = 'TRACKING_NOT_ACTIVE', r);
+
+  -- Agent views: own data only
+  perform pg_temp.check('P9 Agent A: monitoring views expose only own tasks and own agent row',
+    pg_temp.visible('select 1 from public.task_monitor where agent_id <> ''10000000-0000-4000-a000-0000000000a1'' or agent_id is null') = 0
+    and pg_temp.visible('select 1 from public.agent_activity') = 1
+    and pg_temp.visible(format('select 1 from public.task_monitor where id = %L', t_b)) = 0);
+
+  -- Agent B isolation
+  perform pg_temp.act_as(agent_b);
+  perform pg_temp.check('P9 Agent B cannot read Agent A''s location events (table or views)',
+    pg_temp.visible(format('select 1 from public.agent_location_events where agent_id = %L', a_agent)) = 0
+    and pg_temp.visible('select 1 from public.task_monitor where id::text like ''55000000-%'' and last_location_at is not null') = 0
+    and pg_temp.visible(format('select 1 from public.agent_activity where id = %L', a_agent)) = 0);
+  r := pg_temp.loc(t_way, 11.34, 77.71);
+  perform pg_temp.check('P9 Agent B cannot record location for Agent A''s task', r = 'TASK_NOT_FOUND', r);
+  r := pg_temp.loc(t_b, 12.9716, 77.5946);
+  perform pg_temp.check('P9 Agent B records location for own task (own rate limit)', r = 'RECORDED', r);
+
+  -- Inactive account / anonymous
+  perform pg_temp.act_as(inactive);
+  r := pg_temp.loc(t_way, 11.34, 77.71);
+  perform pg_temp.check('P9 Inactive agent cannot record location', r = 'UNAUTHORIZED', r);
+  perform pg_temp.act_as_anon();
+  perform pg_temp.check('P9 Anonymous: no location function, no events, no monitoring views',
+    pg_temp.attempt(format('select public.agent_record_location(%L, 11.34, 77.71, 15, now())', t_way)) = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.agent_location_events') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.task_monitor') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.agent_activity') = 'ERR:42501'
+    and pg_temp.attempt('select * from public.task_status_counts(current_date)') = 'ERR:42501');
+
+  -- Admin
+  perform pg_temp.act_as(admin_id);
+  perform pg_temp.check('P9 Admin sees both agents'' events and latest location per task',
+    pg_temp.visible('select distinct agent_id from public.agent_location_events where task_id::text like ''55000000-%''') = 2
+    and pg_temp.visible(format($q$select 1 from public.task_monitor where id = %L and last_latitude = 12.9716
+      and last_longitude = 77.5946 and last_accuracy_meters = 15 and last_location_at is not null$q$, t_b)) = 1);
+  perform pg_temp.check('P9 Admin: task_monitor returns one row per task (latest event only)',
+    pg_temp.visible('select 1 from public.task_monitor where id::text like ''55000000-%''') = 11);
+  perform pg_temp.check('P9 Admin: agent_activity shows the furthest-along open task and last location time',
+    pg_temp.visible(format($q$select 1 from public.agent_activity where id = %L
+      and current_task_status in ('CHECKED_IN', 'IN_PROGRESS') and open_tasks >= 4 and last_location_at is not null and last_completed_at is not null$q$, a_agent)) = 1);
+  select coalesce(sum(total), 0) into n from public.task_status_counts('1900-01-01')
+   where status in ('ON_THE_WAY', 'ARRIVED', 'CHECKED_IN', 'IN_PROGRESS');
+  perform pg_temp.check('P9 Admin: status counts include tasks still in the field', n >= 4, n::text);
+  perform pg_temp.check('P9 Admin cannot insert / update / delete location events either (append-only)',
+    pg_temp.attempt(format($q$insert into public.agent_location_events (agent_id, task_id, latitude, longitude)
+      values (%L, %L, 11.1, 77.1)$q$, a_agent, t_way)) = 'ERR:42501'
+    and pg_temp.attempt('update public.agent_location_events set latitude = 0') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.agent_location_events') = 'ERR:42501');
+  r := pg_temp.loc(t_way, 11.34, 77.71);
+  perform pg_temp.check('P9 Admin (not an agent) cannot record location events', r = 'UNAUTHORIZED', r);
+
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P9 Location events are not copied into audit_logs',
+    pg_temp.visible($q$select 1 from public.audit_logs where entity_type ilike '%LOCATION_EVENT%'$q$) = 0);
+  perform pg_temp.check('P9 Realtime publishes exactly the operational tables',
+    (select array_agg(tablename::text order by tablename) from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public')
+      = array['agent_location_events', 'cash_collections', 'checkins', 'notifications', 'task_products', 'task_proofs', 'task_status_history', 'tasks']);
+  perform pg_temp.check('P9 Every published table has RLS enabled',
+    not exists (select 1 from pg_publication_tables p join pg_class c on c.relname = p.tablename
+                  join pg_namespace ns on ns.oid = c.relnamespace and ns.nspname = p.schemaname
+                 where p.pubname = 'supabase_realtime' and not c.relrowsecurity));
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Phase 10: notifications, preferences, outbox, reminders
+-- ---------------------------------------------------------------------------
+-- Rows for one recipient about one task (as owner; RLS is tested separately).
+create function pg_temp.notes(p_user uuid, p_task uuid, p_type text default null) returns bigint
+language sql security definer as $$
+  select count(*) from public.notifications
+   where recipient_user_id = p_user and task_id = p_task and (p_type is null or type = p_type)
+$$;
+create function pg_temp.queued(p_user uuid, p_task uuid, p_type text default null) returns bigint
+language sql security definer as $$
+  select count(*) from public.communication_queue q join public.notifications n on n.id = q.notification_id
+   where q.recipient_user_id = p_user and n.task_id = p_task and (p_type is null or n.type = p_type)
+$$;
+
+do $$
+declare
+  admin_id constant uuid := '00000000-0000-4000-a000-00000000000a';
+  agent_a  constant uuid := '00000000-0000-4000-a000-0000000000a1';
+  agent_b  constant uuid := '00000000-0000-4000-a000-0000000000b1';
+  inactive constant uuid := '00000000-0000-4000-a000-0000000000c1';
+  a_agent  constant uuid := '10000000-0000-4000-a000-0000000000a1';
+  b_agent  constant uuid := '10000000-0000-4000-a000-0000000000b1';
+  base jsonb := '{"task_type":"SURVEY","title":"P10 survey","priority":2,
+    "customer_id":"20000000-0000-4000-a000-0000000000a1","location_id":"30000000-0000-4000-a000-0000000000a1",
+    "agent_id":"10000000-0000-4000-a000-0000000000a1","scheduled_date":"2030-01-15","scheduled_start_time":"10:00"}';
+  t1 uuid; t2 uuid; t3 uuid; t4 uuid;
+  n_id uuid; q_id uuid; q2 uuid; q3 uuid;
+  r text;
+  n bigint;
+  row_ public.communication_queue%rowtype;
+begin
+  -- ---------------------------------------------------------------- assignment
+  perform pg_temp.act_as(admin_id);
+  t1 := public.admin_save_task(base, '[]', true);
+  perform pg_temp.check('P10 Assigning a task notifies the assigned agent only (not the acting admin, not other agents)',
+    pg_temp.notes(agent_a, t1, 'TASK_ASSIGNED') = 1 and pg_temp.notes(admin_id, t1) = 0 and pg_temp.notes(agent_b, t1) = 0);
+  perform set_config('role', 'postgres', true);
+  select id into n_id from public.notifications where recipient_user_id = agent_a and task_id = t1;
+  perform pg_temp.check('P10 Assignment notification: title, task code, link to the agent task, no contact data or coordinates',
+    exists (select 1 from public.notifications nn join public.tasks t on t.id = nn.task_id
+             where nn.id = n_id and nn.title = 'New Task Assigned'
+               and nn.message = 'Task #' || t.task_code || ' has been assigned to you.'
+               and nn.data ->> 'path' = '/agent/tasks/' || t.id and nn.data ->> 'task_code' = t.task_code
+               and nn.data ? 'customer' and nn.data ? 'scheduled_date' and nn.data ? 'priority'
+               and not (nn.data ?| array['phone', 'email', 'latitude', 'longitude', 'expected_amount', 'agent_id'])));
+  perform pg_temp.check('P10 Assignment queues exactly one e-mail to the agent''s address (PENDING, nothing sent in the transaction)',
+    (select count(*) from public.communication_queue where notification_id = n_id and channel = 'EMAIL' and status = 'PENDING'
+        and recipient_address = 'rls.agent.a@test.invalid' and attempt_count = 0 and sent_at is null) = 1);
+
+  perform pg_temp.act_as(admin_id);
+  perform public.admin_save_task(base || '{"title":"P10 survey (edited)"}', '[]', true, t1);
+  perform pg_temp.check('P10 Saving an assigned task again does not notify again',
+    pg_temp.notes(agent_a, t1) = 1 and pg_temp.queued(agent_a, t1) = 1);
+
+  -- ---------------------------------------------------------------- reassignment
+  perform public.admin_save_task(base || jsonb_build_object('agent_id', b_agent), '[]', true, t1);
+  perform pg_temp.check('P10 Reassignment: previous agent told it is no longer theirs; new agent gets the assignment',
+    pg_temp.notes(agent_a, t1, 'TASK_REASSIGNED') = 1 and pg_temp.notes(agent_b, t1, 'TASK_ASSIGNED') = 1
+    and pg_temp.notes(admin_id, t1) = 0);
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 Reassignment notice links to the task list and names nobody',
+    exists (select 1 from public.notifications where recipient_user_id = agent_a and task_id = t1 and type = 'TASK_REASSIGNED'
+             and data ->> 'path' = '/agent/tasks' and message like 'Task #% is no longer assigned to you.'
+             and message not ilike '%Agent B%' and data::text not ilike '%Agent B%'));
+
+  -- ---------------------------------------------------------------- reschedule
+  perform pg_temp.act_as(admin_id);
+  perform public.admin_save_task(base || jsonb_build_object('agent_id', b_agent, 'scheduled_date', '2030-01-16'), '[]', true, t1);
+  perform pg_temp.check('P10 Changing the schedule of an assigned task notifies its agent',
+    pg_temp.notes(agent_b, t1, 'TASK_RESCHEDULED') = 1);
+
+  -- ---------------------------------------------------------------- status events
+  perform pg_temp.act_as(agent_b);
+  r := pg_temp.agent_move(t1, 'ASSIGNED', 'ACCEPTED');
+  perform pg_temp.check('P10 Accept → admins notified once; the agent is not notified about their own action',
+    r = 'OK' and pg_temp.notes(admin_id, t1, 'TASK_ACCEPTED') = 1 and pg_temp.notes(agent_b, t1, 'TASK_ACCEPTED') = 0, r);
+  perform pg_temp.agent_move(t1, 'ACCEPTED', 'ON_THE_WAY');
+  perform pg_temp.agent_move(t1, 'ON_THE_WAY', 'ARRIVED');
+  perform pg_temp.check('P10 Travel and arrival create no notifications (shown live on monitoring instead)',
+    pg_temp.notes(admin_id, t1) = 1 and pg_temp.notes(agent_b, t1) = 2);
+  perform set_config('role', 'postgres', true);
+  update public.tasks set status = 'CHECKED_IN' where id = t1; -- check-in itself is covered in Phase 7
+  perform pg_temp.act_as(agent_b);
+  perform pg_temp.agent_move(t1, 'CHECKED_IN', 'IN_PROGRESS');
+  r := pg_temp.complete(t1, null, null, 'Survey done');
+  perform pg_temp.check('P10 Check-in, start and completion each notify the admin exactly once',
+    r = 'COMPLETED' and pg_temp.notes(admin_id, t1, 'TASK_CHECKED_IN') = 1 and pg_temp.notes(admin_id, t1, 'TASK_STARTED') = 1
+    and pg_temp.notes(admin_id, t1, 'TASK_COMPLETED') = 1 and pg_temp.notes(admin_id, t1) = 4, r);
+  perform pg_temp.check('P10 Only completion (not accept / check-in / start) queues an e-mail for the admin',
+    pg_temp.queued(admin_id, t1) = 1 and pg_temp.queued(admin_id, t1, 'TASK_COMPLETED') = 1);
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true); -- verified by the system, not by the agent
+  update public.tasks set status = 'VERIFIED' where id = t1;
+  perform pg_temp.check('P10 Verification notifies the agent',
+    pg_temp.notes(agent_b, t1, 'TASK_VERIFIED') = 1);
+  perform pg_temp.check('P10 One notification per status-history row (the idempotency key)',
+    not exists (select 1 from public.notifications where task_id = t1 and dedupe_key like 'status:%'
+                 group by recipient_user_id, dedupe_key having count(*) > 1)
+    and pg_temp.attempt(format($q$insert into public.notifications (recipient_user_id, task_id, type, title, message, dedupe_key)
+          select recipient_user_id, task_id, type, title, message, dedupe_key from public.notifications where task_id = %L limit 1$q$, t1)) = 'ERR:23505');
+
+  -- failure, cancellation
+  perform pg_temp.act_as(admin_id);
+  t2 := public.admin_save_task(base || '{"title":"P10 to fail"}', '[]', true);
+  t3 := public.admin_save_task(base || '{"title":"P10 to cancel"}', '[]', true);
+  perform public.admin_cancel_task(t3, 'Customer called off');
+  perform pg_temp.check('P10 Cancellation notifies the agent (with an e-mail), not the admin who cancelled',
+    pg_temp.notes(agent_a, t3, 'TASK_CANCELLED') = 1 and pg_temp.queued(agent_a, t3, 'TASK_CANCELLED') = 1 and pg_temp.notes(admin_id, t3) = 0);
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.agent_move(t2, 'ASSIGNED', 'ACCEPTED');
+  r := pg_temp.agent_move(t2, 'ACCEPTED', 'FAILED', 'Customer unavailable');
+  perform pg_temp.check('P10 Failure notifies the admin (with an e-mail)',
+    r = 'OK' and pg_temp.notes(admin_id, t2, 'TASK_FAILED') = 1 and pg_temp.queued(admin_id, t2, 'TASK_FAILED') = 1, r);
+
+  -- cash and proof
+  perform set_config('role', 'postgres', true);
+  insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, assigned_at, expected_amount)
+  values ('56000000-0000-4000-a000-000000000001', 'COLLECT_CASH', 'IN_PROGRESS', a_agent,
+          '20000000-0000-4000-a000-0000000000a1', '30000000-0000-4000-a000-0000000000a1', 'P10 cash', now(), 4321.00);
+  t4 := '56000000-0000-4000-a000-000000000001';
+  perform pg_temp.act_as(agent_a);
+  r := pg_temp.complete(t4, null, '{"collected_amount":"4321.00","payment_method":"UPI","reference":"UPIREF777"}'::jsonb);
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 Cash collection notifies the admin without the amount or reference', r = 'COMPLETED'
+    and pg_temp.notes(admin_id, t4, 'CASH_COLLECTION_RECORDED') = 1
+    and not exists (select 1 from public.notifications where task_id = t4
+                     and (message || title || data::text) ~ '4321|UPIREF777|UPI'), r);
+  insert into public.task_proofs (task_id, agent_id, proof_type) values (t2, a_agent, 'PHOTO'), (t2, a_agent, 'PHOTO'), (t2, a_agent, 'DOCUMENT');
+  perform pg_temp.check('P10 Several proof uploads on a task produce one notification per admin',
+    pg_temp.notes(admin_id, t2, 'PROOF_UPLOADED') = 1);
+  perform pg_temp.check('P10 Location events have no notification trigger',
+    not exists (select 1 from pg_trigger g join pg_proc p on p.oid = g.tgfoid
+                 where g.tgrelid = 'public.agent_location_events'::regclass and not g.tgisinternal and p.proname like 'notify%'));
+
+  -- ---------------------------------------------------------------- a notification failure never blocks the task
+  alter table public.notifications add constraint p10_break check (type <> 'TASK_ACCEPTED') not valid;
+  perform pg_temp.act_as(admin_id);
+  t3 := public.admin_save_task(base || '{"title":"P10 resilient"}', '[]', true);
+  perform pg_temp.act_as(agent_a);
+  r := pg_temp.agent_move(t3, 'ASSIGNED', 'ACCEPTED');
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 If creating the notification fails, the task transition still succeeds', r = 'OK'
+    and (select status from public.tasks where id = t3) = 'ACCEPTED' and pg_temp.notes(admin_id, t3) = 0, r);
+  alter table public.notifications drop constraint p10_break;
+
+  -- ---------------------------------------------------------------- RLS
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.check('P10 Agent A reads only own notifications',
+    pg_temp.visible('select 1 from public.notifications') > 0
+    and pg_temp.visible(format('select 1 from public.notifications where recipient_user_id <> %L', agent_a)) = 0
+    and pg_temp.visible('select 1 from public.communication_log where channel <> ''IN_APP''') = 0
+    and pg_temp.visible(format('select 1 from public.communication_log where recipient_user_id <> %L', agent_a)) = 0);
+  perform pg_temp.check('P10 Agent cannot read the outbox / delivery history',
+    pg_temp.visible('select 1 from public.communication_queue') = 0);
+  perform pg_temp.check('P10 Agent cannot create, retarget, edit or delete notifications',
+    pg_temp.attempt(format($q$insert into public.notifications (recipient_user_id, type, title, message, dedupe_key)
+      values (%L, 'SYSTEM', 'Hello', 'Injected', 'x')$q$, agent_b)) = 'ERR:42501'
+    and pg_temp.attempt(format($q$insert into public.notifications (recipient_user_id, type, title, message, dedupe_key)
+      values (%L, 'SYSTEM', 'Hello', 'Injected', 'x')$q$, agent_a)) = 'ERR:42501'
+    and pg_temp.attempt(format('update public.notifications set recipient_user_id = %L', agent_b)) = 'ERR:42501'
+    and pg_temp.attempt('update public.notifications set is_read = true') = 'ERR:42501'
+    and pg_temp.attempt('update public.notifications set message = ''changed''') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.notifications') = 'ERR:42501');
+  perform pg_temp.check('P10 Agent cannot call the publishing or outbox functions',
+    pg_temp.attempt(format($q$select public.publish_notification(%L, 'SYSTEM', null, 'Hi', 'Injected', 'x')$q$, agent_b)) = 'ERR:42501'
+    and pg_temp.attempt($q$select public.notify_admins('SYSTEM', null, 'Hi', 'Injected', 'x')$q$) = 'ERR:42501'
+    and pg_temp.attempt('select public.claim_communications(10)') = 'ERR:42501'
+    and pg_temp.attempt(format($q$select public.complete_communication(%L, 'SENT')$q$, n_id)) = 'ERR:42501'
+    and pg_temp.attempt('select public.enqueue_task_reminders()') = 'ERR:42501'
+    and pg_temp.error_of(format('select public.admin_retry_communication(%L)', n_id)) = 'NOT_ADMIN');
+  perform pg_temp.check('P10 Agent cannot modify the outbox',
+    pg_temp.attempt('update public.communication_queue set status = ''SENT''') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.communication_queue') = 'ERR:42501'
+    and pg_temp.attempt($q$insert into public.communication_queue (channel, recipient_address, message) values ('EMAIL', 'x@example.com', 'spam')$q$) = 'ERR:42501');
+
+  -- read marking
+  select id into q_id from public.notifications where recipient_user_id = agent_b limit 1; -- not visible to A: null
+  perform set_config('role', 'postgres', true);
+  select id into q_id from public.notifications where recipient_user_id = agent_b and not is_read limit 1;
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.check('P10 Agent A cannot mark Agent B''s notification as read',
+    public.mark_notification_read(q_id) = false);
+  perform pg_temp.check('P10 Agent A marks own notification as read (once)',
+    public.mark_notification_read(n_id) = true and public.mark_notification_read(n_id) = false
+    and pg_temp.visible(format('select 1 from public.notifications where id = %L and is_read and read_at is not null', n_id)) = 1);
+  select public.mark_all_notifications_read() into n;
+  perform pg_temp.check('P10 Mark all as read affects only the caller''s notifications', n >= 1
+    and pg_temp.visible('select 1 from public.notifications where not is_read') = 0, n::text);
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 … and leaves other users'' notifications unread',
+    exists (select 1 from public.notifications where id = q_id and not is_read)
+    and exists (select 1 from public.notifications where recipient_user_id = admin_id and not is_read));
+
+  -- inactive / anonymous
+  perform pg_temp.check('P10 An inactive user is never a recipient',
+    public.publish_notification(inactive, 'SYSTEM', null, 'Hi', 'Message', 'p10-inactive') is null);
+  perform pg_temp.act_as(inactive);
+  perform pg_temp.check('P10 Inactive user: no notifications, cannot mark read, cannot save preferences',
+    pg_temp.visible('select 1 from public.notifications') = 0
+    and pg_temp.error_of('select public.mark_all_notifications_read()') = 'UNAUTHORIZED'
+    and pg_temp.attempt(format('insert into public.notification_preferences (user_id) values (%L)', inactive)) = 'ERR:42501');
+  perform pg_temp.act_as_anon();
+  perform pg_temp.check('P10 Anonymous: no notifications, outbox, preferences, log or functions',
+    pg_temp.attempt('select 1 from public.notifications') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.communication_queue') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.notification_preferences') = 'ERR:42501'
+    and pg_temp.attempt('select 1 from public.communication_log') = 'ERR:42501'
+    and pg_temp.attempt('select public.mark_all_notifications_read()') = 'ERR:42501'
+    and pg_temp.attempt('select public.claim_communications(1)') = 'ERR:42501');
+
+  -- admin
+  perform pg_temp.act_as(admin_id);
+  perform pg_temp.check('P10 Admin reads all notifications and the delivery history',
+    pg_temp.visible(format('select 1 from public.notifications where recipient_user_id = %L', agent_a)) > 0
+    and pg_temp.visible('select 1 from public.communication_queue') > 0
+    and pg_temp.visible('select 1 from public.communication_log where channel = ''EMAIL''') > 0
+    and pg_temp.visible('select 1 from public.communication_log where channel = ''IN_APP''') > 0);
+  perform pg_temp.check('P10 Admin cannot edit or delete notifications or delivery history, or read for someone else',
+    pg_temp.attempt('update public.notifications set message = ''x''') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.notifications') = 'ERR:42501'
+    and pg_temp.attempt('update public.communication_queue set status = ''SENT'', last_error = null') = 'ERR:42501'
+    and pg_temp.attempt('delete from public.communication_queue') = 'ERR:42501'
+    and public.mark_notification_read(q_id) = false
+    and pg_temp.attempt('select public.claim_communications(1)') = 'ERR:42501');
+
+  -- ---------------------------------------------------------------- preferences
+  perform pg_temp.act_as(agent_a);
+  perform pg_temp.check('P10 Agent cannot create or change another user''s preferences',
+    pg_temp.attempt(format('insert into public.notification_preferences (user_id, email_enabled) values (%L, false)', agent_b)) = 'ERR:42501');
+  insert into public.notification_preferences (user_id, email_enabled, task_assignment, task_status)
+  values (agent_a, false, false, false);
+  perform pg_temp.check('P10 Agent cannot move their preferences to another user',
+    pg_temp.attempt(format('update public.notification_preferences set user_id = %L', agent_b)) = 'ERR:42501');
+  perform pg_temp.act_as(admin_id);
+  t3 := public.admin_save_task(base || '{"title":"P10 prefs"}', '[]', true);
+  perform pg_temp.check('P10 With e-mail and assignment e-mails off: assignment still appears in-app, no e-mail queued',
+    pg_temp.notes(agent_a, t3, 'TASK_ASSIGNED') = 1 and pg_temp.queued(agent_a, t3) = 0);
+  perform set_config('role', 'postgres', true);
+  update public.tasks set status = 'VERIFIED' where id = t3;
+  perform pg_temp.check('P10 A switched-off, non-critical category is not delivered at all',
+    pg_temp.notes(agent_a, t3, 'TASK_VERIFIED') = 0);
+  perform pg_temp.check('P10 Preference changes are audited',
+    exists (select 1 from public.audit_logs where action = 'CREATE_NOTIFICATION_PREFERENCES' and actor_user_id = agent_a));
+
+  -- ---------------------------------------------------------------- outbox: retries, limits, expiry
+  select q.id into q_id from public.communication_queue q join public.notifications nn on nn.id = q.notification_id
+   where nn.task_id = t1 and q.recipient_user_id = agent_a and nn.type = 'TASK_ASSIGNED';
+  select q.id into q2 from public.communication_queue q join public.notifications nn on nn.id = q.notification_id
+   where nn.task_id = t2 and nn.type = 'TASK_FAILED' and q.recipient_user_id = admin_id;
+  select q.id into q3 from public.communication_queue q join public.notifications nn on nn.id = q.notification_id
+   where nn.task_id = t1 and nn.type = 'TASK_COMPLETED' and q.recipient_user_id = admin_id;
+  -- only our three rows are due
+  update public.communication_queue set scheduled_at = now() + interval '1 hour' where id not in (q_id, q2, q3);
+  update public.communication_queue set created_at = now() - interval '3 days' where id = q3;
+
+  perform set_config('role', 'service_role', true);
+  select count(*) into n from public.claim_communications(10);
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 Claim: due messages become PROCESSING (attempt 1); a 3-day-old one is cancelled, not sent',
+    n = 2 and (select count(*) from public.communication_queue where id in (q_id, q2) and status = 'PROCESSING' and attempt_count = 1) = 2
+    and (select status || ':' || last_error from public.communication_queue where id = q3) = 'CANCELLED:Expired before it could be sent', n::text);
+  perform set_config('role', 'service_role', true);
+  select count(*) into n from public.claim_communications(10);
+  perform pg_temp.check('P10 A claimed message is not handed out twice', n = 0, n::text);
+
+  r := public.complete_communication(q_id, 'SENT', 'resend', 'msg_123');
+  perform set_config('role', 'postgres', true);
+  select * into row_ from public.communication_queue where id = q_id;
+  perform pg_temp.check('P10 Sent: status, provider id and time recorded; audited as SEND_NOTIFICATION', r = 'SENT'
+    and row_.status = 'SENT' and row_.provider = 'resend' and row_.provider_message_id = 'msg_123' and row_.sent_at is not null
+    and row_.last_error is null
+    and exists (select 1 from public.audit_logs where action = 'SEND_NOTIFICATION' and entity_id = q_id), r);
+
+  perform set_config('role', 'service_role', true);
+  r := public.complete_communication(q2, 'RETRY', 'resend', null, 'HTTP 503');
+  perform set_config('role', 'postgres', true);
+  select * into row_ from public.communication_queue where id = q2;
+  perform pg_temp.check('P10 Temporary failure 1 → queued again after a delay, error kept', r = 'PENDING'
+    and row_.status = 'PENDING' and row_.scheduled_at > now() + interval '30 seconds' and row_.last_error = 'HTTP 503', r);
+  perform set_config('role', 'service_role', true);
+  select count(*) into n from public.claim_communications(10);
+  perform pg_temp.check('P10 … and not retried before its delay has passed', n = 0, n::text);
+  perform set_config('role', 'postgres', true);
+  update public.communication_queue set scheduled_at = now() - interval '1 second' where id = q2;
+  perform set_config('role', 'service_role', true);
+  perform public.claim_communications(10);
+  r := public.complete_communication(q2, 'RETRY', 'resend', null, 'HTTP 503');
+  perform set_config('role', 'postgres', true);
+  update public.communication_queue set scheduled_at = now() - interval '1 second' where id = q2;
+  perform set_config('role', 'service_role', true);
+  perform public.claim_communications(10);
+  r := r || '>' || public.complete_communication(q2, 'RETRY', 'resend', null, 'HTTP 503 again');
+  perform set_config('role', 'postgres', true);
+  select * into row_ from public.communication_queue where id = q2;
+  perform pg_temp.check('P10 Third temporary failure → FAILED (maximum attempts), audited as NOTIFICATION_FAILED', r = 'PENDING>FAILED'
+    and row_.status = 'FAILED' and row_.attempt_count = 3 and row_.failed_at is not null and row_.last_error = 'HTTP 503 again'
+    and exists (select 1 from public.audit_logs where action = 'NOTIFICATION_FAILED' and entity_id = q2), r);
+  perform set_config('role', 'service_role', true);
+  select count(*) into n from public.claim_communications(10);
+  perform pg_temp.check('P10 A FAILED message is never retried automatically; a finished one cannot be completed again',
+    n = 0 and public.complete_communication(q_id, 'FAILED') is null and public.complete_communication(q2, 'SENT') is null, n::text);
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 The failed e-mail did not change the task: it is still FAILED-by-agent with its notification',
+    (select status from public.tasks where id = t2) = 'FAILED' and pg_temp.notes(admin_id, t2, 'TASK_FAILED') = 1);
+
+  perform pg_temp.act_as(admin_id);
+  perform pg_temp.check('P10 Admin can retry a FAILED message (audited); a SENT one cannot be re-queued',
+    public.admin_retry_communication(q2) = true and public.admin_retry_communication(q_id) = false
+    and pg_temp.visible(format($q$select 1 from public.communication_queue where id = %L and status = 'PENDING' and attempt_count = 0$q$, q2)) = 1
+    and pg_temp.visible(format($q$select 1 from public.audit_logs where action = 'RETRY_NOTIFICATION' and entity_id = %L and actor_user_id = %L$q$, q2, admin_id)) = 1);
+  perform set_config('role', 'service_role', true);
+  perform public.claim_communications(10);
+  r := public.complete_communication(q2, 'FAILED', 'resend', null, 'HTTP 422 invalid address');
+  perform pg_temp.check('P10 A permanent failure is final on the first attempt', r = 'FAILED', r);
+
+  -- ---------------------------------------------------------------- reminders
+  perform set_config('role', 'postgres', true);
+  insert into public.tasks (id, task_type, status, agent_id, customer_id, location_id, title, assigned_at, scheduled_date, scheduled_start_time)
+  values
+    ('56000000-0000-4000-a000-000000000002', 'SURVEY', 'ASSIGNED', b_agent, '20000000-0000-4000-a000-0000000000a1',
+     '30000000-0000-4000-a000-0000000000a1', 'P10 soon', now(),
+     ((now() at time zone 'Asia/Kolkata') + interval '30 minutes')::date, ((now() at time zone 'Asia/Kolkata') + interval '30 minutes')::time),
+    ('56000000-0000-4000-a000-000000000003', 'SURVEY', 'ASSIGNED', b_agent, '20000000-0000-4000-a000-0000000000a1',
+     '30000000-0000-4000-a000-0000000000a1', 'P10 overdue', now(),
+     ((now() at time zone 'Asia/Kolkata') - interval '1 day')::date, '09:00'),
+    ('56000000-0000-4000-a000-000000000004', 'SURVEY', 'COMPLETED', b_agent, '20000000-0000-4000-a000-0000000000a1',
+     '30000000-0000-4000-a000-0000000000a1', 'P10 done yesterday', now(),
+     ((now() at time zone 'Asia/Kolkata') - interval '1 day')::date, '09:00');
+  perform set_config('role', 'service_role', true);
+  perform public.enqueue_task_reminders('Asia/Kolkata');
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 Reminders: "starting soon" to the agent; "overdue" to agent and admin; nothing for finished tasks',
+    (select count(*) from public.notifications where task_id = '56000000-0000-4000-a000-000000000002' and type = 'TASK_REMINDER'
+        and recipient_user_id = agent_b and title = 'Task Starting Soon') = 1
+    and pg_temp.notes(admin_id, '56000000-0000-4000-a000-000000000002', 'TASK_REMINDER') = 0
+    and (select count(*) from public.notifications where task_id = '56000000-0000-4000-a000-000000000003' and type = 'TASK_REMINDER'
+        and title = 'Task Overdue' and recipient_user_id in (agent_b, admin_id)) = 2
+    and pg_temp.notes(agent_b, '56000000-0000-4000-a000-000000000004', 'TASK_REMINDER') = 0);
+  select count(*) into n from public.notifications where type = 'TASK_REMINDER';
+  perform set_config('role', 'service_role', true);
+  perform public.enqueue_task_reminders('Asia/Kolkata');
+  perform public.enqueue_task_reminders('Asia/Kolkata');
+  perform pg_temp.check('P10 Running the reminder job again creates no duplicates; an unknown time zone is rejected',
+    pg_temp.error_of('select public.enqueue_task_reminders(''Mars/Olympus'')') = 'INVALID_TIME_ZONE');
+  perform set_config('role', 'postgres', true);
+  perform pg_temp.check('P10 … reminder count unchanged after two more runs',
+    (select count(*) from public.notifications where type = 'TASK_REMINDER') = n, n::text);
+
+  perform pg_temp.check('P10 RLS is enabled on all notification tables',
+    (select bool_and(relrowsecurity) from pg_class where oid in ('public.notifications'::regclass,
+       'public.communication_queue'::regclass, 'public.notification_preferences'::regclass)));
 end
 $$;
 

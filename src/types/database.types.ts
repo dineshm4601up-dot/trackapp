@@ -21,6 +21,12 @@ export type Database = {
       foreignKeyName: "agent_location_events_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_location_events_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
       referencedRelation: "agent_directory"
       referencedColumns: ["id"]
     },{
@@ -33,7 +39,19 @@ isOneToOne: false
       foreignKeyName: "agent_location_events_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "agent_location_events_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_location_events_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "agent_location_events_task_id_fkey"
@@ -109,6 +127,12 @@ isOneToOne: false
       foreignKeyName: "cash_collections_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "cash_collections_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
       referencedRelation: "agent_directory"
       referencedColumns: ["id"]
     },{
@@ -121,7 +145,19 @@ isOneToOne: false
       foreignKeyName: "cash_collections_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "cash_collections_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "cash_collections_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "cash_collections_task_id_fkey"
@@ -146,6 +182,12 @@ isOneToOne: false
       foreignKeyName: "checkins_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "checkins_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
       referencedRelation: "agent_directory"
       referencedColumns: ["id"]
     },{
@@ -158,13 +200,50 @@ isOneToOne: false
       foreignKeyName: "checkins_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "checkins_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "checkins_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "task_monitor"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "checkins_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "tasks"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"communication_queue": {
+                  Row: {
+                    "attempt_count": number,"channel": string,"created_at": string,"failed_at": string | null,"id": string,"last_error": string | null,"message": string,"notification_id": string | null,"payload": NonNullable<Json>,"provider": string | null,"provider_message_id": string | null,"recipient_address": string,"recipient_user_id": string | null,"scheduled_at": string,"sent_at": string | null,"status": string,"subject": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "attempt_count"?: number,"channel": string,"created_at"?: string,"failed_at"?: string | null,"id"?: string,"last_error"?: string | null,"message": string,"notification_id"?: string | null,"payload"?: NonNullable<Json>,"provider"?: string | null,"provider_message_id"?: string | null,"recipient_address": string,"recipient_user_id"?: string | null,"scheduled_at"?: string,"sent_at"?: string | null,"status"?: string,"subject"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "attempt_count"?: number,"channel"?: string,"created_at"?: string,"failed_at"?: string | null,"id"?: string,"last_error"?: string | null,"message"?: string,"notification_id"?: string | null,"payload"?: NonNullable<Json>,"provider"?: string | null,"provider_message_id"?: string | null,"recipient_address"?: string,"recipient_user_id"?: string | null,"scheduled_at"?: string,"sent_at"?: string | null,"status"?: string,"subject"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "communication_queue_notification_id_fkey"
+      columns: ["notification_id"]
+isOneToOne: false
+      referencedRelation: "notifications"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "communication_queue_recipient_user_id_fkey"
+      columns: ["recipient_user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
       referencedColumns: ["id"]
     }
                   ]
@@ -197,6 +276,68 @@ isOneToOne: false
       columns: ["customer_id"]
 isOneToOne: false
       referencedRelation: "customers"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notification_preferences": {
+                  Row: {
+                    "cash_collection": boolean,"created_at": string,"email_enabled": boolean,"id": string,"proof_upload": boolean,"sms_enabled": boolean,"task_assignment": boolean,"task_reminder": boolean,"task_status": boolean,"updated_at": string,"user_id": string,"whatsapp_enabled": boolean
+                  }
+                  Insert: {
+                    "cash_collection"?: boolean,"created_at"?: string,"email_enabled"?: boolean,"id"?: string,"proof_upload"?: boolean,"sms_enabled"?: boolean,"task_assignment"?: boolean,"task_reminder"?: boolean,"task_status"?: boolean,"updated_at"?: string,"user_id": string,"whatsapp_enabled"?: boolean
+                  }
+                  Update: {
+                    "cash_collection"?: boolean,"created_at"?: string,"email_enabled"?: boolean,"id"?: string,"proof_upload"?: boolean,"sms_enabled"?: boolean,"task_assignment"?: boolean,"task_reminder"?: boolean,"task_status"?: boolean,"updated_at"?: string,"user_id"?: string,"whatsapp_enabled"?: boolean
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notification_preferences_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notifications": {
+                  Row: {
+                    "created_at": string,"data": NonNullable<Json>,"dedupe_key": string,"id": string,"is_read": boolean,"message": string,"read_at": string | null,"recipient_user_id": string,"task_id": string | null,"title": string,"type": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"data"?: NonNullable<Json>,"dedupe_key": string,"id"?: string,"is_read"?: boolean,"message": string,"read_at"?: string | null,"recipient_user_id": string,"task_id"?: string | null,"title": string,"type": string
+                  }
+                  Update: {
+                    "created_at"?: string,"data"?: NonNullable<Json>,"dedupe_key"?: string,"id"?: string,"is_read"?: boolean,"message"?: string,"read_at"?: string | null,"recipient_user_id"?: string,"task_id"?: string | null,"title"?: string,"type"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_recipient_user_id_fkey"
+      columns: ["recipient_user_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "notifications_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "tasks"
       referencedColumns: ["id"]
     }
                   ]
@@ -247,7 +388,19 @@ isOneToOne: false
       foreignKeyName: "task_products_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "task_products_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "task_products_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "task_products_task_id_fkey"
@@ -272,6 +425,12 @@ isOneToOne: false
       foreignKeyName: "task_proofs_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "task_proofs_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
       referencedRelation: "agent_directory"
       referencedColumns: ["id"]
     },{
@@ -284,7 +443,19 @@ isOneToOne: false
       foreignKeyName: "task_proofs_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "task_proofs_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "task_proofs_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "task_proofs_task_id_fkey"
@@ -315,7 +486,19 @@ isOneToOne: false
       foreignKeyName: "task_status_history_task_id_fkey"
       columns: ["task_id"]
 isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["current_task_id"]
+    },{
+      foreignKeyName: "task_status_history_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
       referencedRelation: "task_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "task_status_history_task_id_fkey"
+      columns: ["task_id"]
+isOneToOne: false
+      referencedRelation: "task_monitor"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "task_status_history_task_id_fkey"
@@ -337,6 +520,12 @@ isOneToOne: false
                   }
                   Relationships: [
                     {
+      foreignKeyName: "tasks_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
       foreignKeyName: "tasks_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
@@ -383,7 +572,14 @@ isOneToOne: false
                 }
           }
           Views: {
-            "agent_directory": {
+            "agent_activity": {
+                  Row: {
+                    "account_active": boolean | null,"current_task_code": string | null,"current_task_id": string | null,"current_task_status": Database["public"]['Enums']["task_status"] | null,"current_task_type": Database["public"]['Enums']["task_type"] | null,"employee_code": string | null,"full_name": string | null,"id": string | null,"is_active": boolean | null,"last_completed_at": string | null,"last_location_at": string | null,"open_tasks": number | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"agent_directory": {
                   Row: {
                     "account_active": boolean | null,"created_at": string | null,"email": string | null,"employee_code": string | null,"full_name": string | null,"id": string | null,"is_active": boolean | null,"phone": string | null,"profile_id": string | null,"updated_at": string | null
                   }
@@ -395,6 +591,13 @@ isOneToOne: true
       referencedRelation: "profiles"
       referencedColumns: ["id"]
     }
+                  ]
+                },"communication_log": {
+                  Row: {
+                    "attempt_count": number | null,"channel": string | null,"created_at": string | null,"failed_at": string | null,"id": string | null,"last_error": string | null,"notification_id": string | null,"provider": string | null,"queue_id": string | null,"recipient_address": string | null,"recipient_name": string | null,"recipient_user_id": string | null,"sent_at": string | null,"status": string | null,"task_code": string | null,"task_id": string | null,"title": string | null,"type": string | null
+                  }
+                  Relationships: [
+                    
                   ]
                 },"location_directory": {
                   Row: {
@@ -415,6 +618,55 @@ isOneToOne: false
                   }
                   Relationships: [
                     {
+      foreignKeyName: "tasks_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tasks_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "agent_directory"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tasks_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "agents"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tasks_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tasks_location_belongs_to_customer"
+      columns: ["location_id","customer_id"]
+isOneToOne: false
+      referencedRelation: "location_directory"
+      referencedColumns: ["id","customer_id"]
+    },{
+      foreignKeyName: "tasks_location_belongs_to_customer"
+      columns: ["location_id","customer_id"]
+isOneToOne: false
+      referencedRelation: "locations"
+      referencedColumns: ["id","customer_id"]
+    }
+                  ]
+                },"task_monitor": {
+                  Row: {
+                    "agent_id": string | null,"agent_name": string | null,"assigned_total": number | null,"checked_in_at": string | null,"collected_amount": number | null,"created_at": string | null,"customer_code": string | null,"customer_id": string | null,"customer_name": string | null,"delivered_total": number | null,"employee_code": string | null,"expected_amount": number | null,"id": string | null,"last_accuracy_meters": number | null,"last_latitude": number | null,"last_location_at": string | null,"last_longitude": number | null,"line_count": number | null,"location_city": string | null,"location_id": string | null,"location_name": string | null,"priority": number | null,"proof_count": number | null,"scheduled_date": string | null,"scheduled_end_time": string | null,"scheduled_start_time": string | null,"status": Database["public"]['Enums']["task_status"] | null,"task_code": string | null,"task_type": Database["public"]['Enums']["task_type"] | null,"title": string | null,"updated_at": string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "tasks_agent_id_fkey"
+      columns: ["agent_id"]
+isOneToOne: false
+      referencedRelation: "agent_activity"
+      referencedColumns: ["id"]
+    },{
       foreignKeyName: "tasks_agent_id_fkey"
       columns: ["agent_id"]
 isOneToOne: false
@@ -452,6 +704,9 @@ isOneToOne: false
             "admin_cancel_task":
 { Args: { "p_reason": string,"p_task_id": string }; Returns: undefined
                            },
+"admin_retry_communication":
+{ Args: { "p_id": string }; Returns: boolean
+                           },
 "admin_save_task":
 { Args: { "p_assign": boolean,"p_products": Json,"p_task": Json,"p_task_id"?: string }; Returns: string
                            },
@@ -463,6 +718,9 @@ isOneToOne: false
                            },
 "agent_complete_task":
 { Args: { "p_cash"?: Json,"p_lines"?: Json,"p_notes"?: string,"p_partial"?: boolean,"p_reason"?: string,"p_task_id": string }; Returns: Json
+                           },
+"agent_record_location":
+{ Args: { "p_accuracy": number,"p_captured_at": string,"p_latitude": number,"p_longitude": number,"p_task_id": string }; Returns: Json
                            },
 "agent_transition_task":
 { Args: { "p_expected_status": Database["public"]['Enums']["task_status"],"p_notes"?: string,"p_reason"?: string,"p_task_id": string,"p_to_status": Database["public"]['Enums']["task_status"] }; Returns: Database["public"]['Enums']["task_status"]
@@ -476,8 +734,41 @@ isOneToOne: false
 "can_upload_task_proof":
 { Args: { "p_name": string }; Returns: boolean
                            },
+"claim_communications":
+{ Args: { "p_limit"?: number }; Returns: {
+              "attempt_count": number,
+"channel": string,
+"created_at": string,
+"failed_at": string | null,
+"id": string,
+"last_error": string | null,
+"message": string,
+"notification_id": string | null,
+"payload": NonNullable<Json>,
+"provider": string | null,
+"provider_message_id": string | null,
+"recipient_address": string,
+"recipient_user_id": string | null,
+"scheduled_at": string,
+"sent_at": string | null,
+"status": string,
+"subject": string | null,
+"updated_at": string
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "communication_queue"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
+"complete_communication":
+{ Args: { "p_error"?: string,"p_id": string,"p_outcome": string,"p_provider"?: string,"p_provider_message_id"?: string }; Returns: string
+                           },
 "current_agent_id":
 { Args: Record<PropertyKey, never>; Returns: string
+                           },
+"enqueue_task_reminders":
+{ Args: { "p_time_zone"?: string }; Returns: number
                            },
 "generate_task_code":
 { Args: Record<PropertyKey, never>; Returns: string
@@ -497,8 +788,31 @@ isOneToOne: false
 "is_my_task":
 { Args: { "p_task_id": string }; Returns: boolean
                            },
+"mark_all_notifications_read":
+{ Args: Record<PropertyKey, never>; Returns: number
+                           },
+"mark_notification_read":
+{ Args: { "p_id": string }; Returns: boolean
+                           },
+"notification_category":
+{ Args: { "p_type": string }; Returns: string
+                           },
+"notification_task_data":
+{ Args: { "p_link"?: boolean,"p_recipient": string,"p_task_id": string }; Returns: Json
+                           },
+"notify_admins":
+{ Args: { "p_dedupe": string,"p_except"?: string,"p_message": string,"p_task_id": string,"p_title": string,"p_type": string }; Returns: number
+                           },
 "proof_path_task_id":
 { Args: { "p_name": string }; Returns: string
+                           },
+"publish_notification":
+{ Args: { "p_dedupe": string,"p_link"?: boolean,"p_message": string,"p_recipient": string,"p_task_id": string,"p_title": string,"p_type": string }; Returns: string
+                           },
+"task_status_counts":
+{ Args: { "p_date": string }; Returns: {
+              "status": Database["public"]['Enums']["task_status"],"total": number
+            }[]
                            }
           }
           Enums: {

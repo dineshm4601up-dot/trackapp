@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { customerLabel, renderCustomerOption } from "@/features/customers/components/customer-picker";
 import type { CustomerOption } from "@/features/customers/schemas";
-import { searchTaskAgents, searchTaskCustomers } from "@/features/tasks/actions";
+import { searchAllLocations, searchTaskAgents, searchTaskCustomers } from "@/features/tasks/actions";
 import { agentLabel, renderAgentOption } from "@/features/tasks/components/task-form";
 import {
   PRIORITIES,
@@ -24,7 +24,7 @@ import {
   type TaskStatus,
   type TaskType,
 } from "@/features/tasks/constants";
-import type { AgentOption } from "@/features/tasks/schemas";
+import type { AgentOption, LocationOption } from "@/features/tasks/schemas";
 
 // Filters include inactive agents/customers so historical tasks stay findable.
 const searchAllAgents = (term: string) => searchTaskAgents(term, true);
@@ -33,7 +33,10 @@ const searchAllCustomers = (term: string) => searchTaskCustomers(term, true);
 type TaskFiltersBarProps = {
   selectedAgent: AgentOption | null;
   selectedCustomer: CustomerOption | null;
+  selectedLocation: LocationOption | null;
 };
+
+const locationLabel = (l: LocationOption) => (l.city ? `${l.location_name}, ${l.city}` : l.location_name);
 
 const ALL = "all";
 
@@ -42,7 +45,7 @@ const statusLabel = (v: string | null) =>
 const typeLabel = (v: string | null) => (v && v in TASK_TYPE_META ? TASK_TYPE_META[v as TaskType].label : "All types");
 const priorityFilterLabel = (v: string | null) => PRIORITIES.find((p) => String(p.value) === v)?.label ?? "Any priority";
 
-export function TaskFiltersBar({ selectedAgent, selectedCustomer }: TaskFiltersBarProps) {
+export function TaskFiltersBar({ selectedAgent, selectedCustomer, selectedLocation }: TaskFiltersBarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -56,7 +59,7 @@ export function TaskFiltersBar({ selectedAgent, selectedCustomer }: TaskFiltersB
     startTransition(() => router.replace(`${pathname}?${params}`, { scroll: false }));
   }
 
-  const active = ["q", "status", "type", "agent", "customer", "date", "priority"].some((k) => searchParams.get(k));
+  const active = ["q", "status", "type", "agent", "customer", "location", "date", "priority"].some((k) => searchParams.get(k));
 
   return (
     <div className="space-y-3">
@@ -71,7 +74,7 @@ export function TaskFiltersBar({ selectedAgent, selectedCustomer }: TaskFiltersB
           </Button>
         )}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <FilterField id="filter-status" label="Status">
           <Select value={searchParams.get("status") ?? ALL} onValueChange={(v) => setParam("status", v)}>
             <SelectTrigger id="filter-status" className="h-10 w-full">
@@ -126,6 +129,19 @@ export function TaskFiltersBar({ selectedAgent, selectedCustomer }: TaskFiltersB
             renderOption={renderCustomerOption}
             placeholder="Any customer"
             searchPlaceholder="Search customers…"
+            clearable
+          />
+        </FilterField>
+        <FilterField id="filter-location" label="Location">
+          <AsyncCombobox<LocationOption>
+            id="filter-location"
+            value={selectedLocation}
+            onChange={(l) => setParam("location", l?.id ?? null)}
+            search={searchAllLocations}
+            getLabel={locationLabel}
+            renderOption={(l) => <span className="truncate">{locationLabel(l)}</span>}
+            placeholder="Any location"
+            searchPlaceholder="Search locations…"
             clearable
           />
         </FilterField>

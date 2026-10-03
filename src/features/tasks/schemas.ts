@@ -113,6 +113,7 @@ export const taskFiltersSchema = z.object({
   type: optionalEnum(TASK_TYPES),
   agent: z.uuid().optional().catch(undefined),
   customer: z.uuid().optional().catch(undefined),
+  location: z.uuid().optional().catch(undefined),
   date: z.string().regex(DATE).optional().catch(undefined),
   priority: z.coerce.number().int().min(1).max(5).optional().catch(undefined),
   page: z.coerce.number().int().min(1).max(10_000).catch(1),
@@ -132,6 +133,7 @@ export function parseTaskFilters(searchParams: Record<string, string | string[] 
     type: first("type"),
     agent: first("agent"),
     customer: first("customer"),
+    location: first("location"),
     date: first("date"),
     priority: first("priority"),
     page: first("page"),
@@ -146,6 +148,7 @@ export function taskFilterQuery(f: TaskFilters): Record<string, string | undefin
     type: f.type,
     agent: f.agent,
     customer: f.customer,
+    location: f.location,
     date: f.date,
     priority: f.priority ? String(f.priority) : undefined,
   };

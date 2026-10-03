@@ -11,8 +11,9 @@ const secretKeySchema = z.string().min(1);
 /**
  * Service-role client. BYPASSES RLS — use only for Supabase Auth admin
  * operations (creating auth users, generating password-setup links) after the
- * caller has passed `requireAdmin()`, and for removing a proof upload that the
- * server just rejected (agents have no storage delete permission). Never use it for ordinary data access:
+ * caller has passed `requireAdmin()`, for removing a proof upload that the
+ * server just rejected (agents have no storage delete permission), and for the
+ * notification outbox (claiming and completing queued messages, reminders). Never use it for ordinary data access:
  * those queries go through the user's session so RLS and audit attribution apply.
  */
 export function createAdminClient() {

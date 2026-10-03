@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarDays, MapPinCheck, Navigation, Phone, UserRound } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/empty-state";
+import { LiveUpdates } from "@/components/shared/live-updates";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,8 @@ import { TaskStatusTimeline } from "@/features/tasks/components/task-status-time
 import { DONE_STATUSES, priorityLabel, TASK_TYPE_META } from "@/features/tasks/constants";
 import { TaskExecutionView } from "@/features/tasks/execution/task-execution-view";
 import { getTaskHistory } from "@/features/tasks/queries";
+import { LocationSharing } from "@/features/tracking/components/location-sharing";
+import { isTrackable } from "@/features/tracking/config";
 import { requireAgent } from "@/lib/auth/session";
 import { numericText } from "@/lib/decimal";
 import { businessToday, formatCalendarDate, formatWallTime, formatWallTimeOfInstant } from "@/lib/format";
@@ -107,6 +110,12 @@ export default async function AgentTaskPage(props: PageProps<"/agent/tasks/[id]"
           {time && ` · ${time}`}
         </p>
       </div>
+
+      {/* Admin changes to this task (cancellation, rescheduling) arrive live. RLS limits the channel to the agent own task. */}
+      <LiveUpdates channel={`agent-task-${task.id}`} bindings={[{ table: "tasks", event: "UPDATE", filter: `id=eq.${task.id}` }]} hidden />
+
+      {/* Mounted only while the task is in an active field state: the GPS watcher cannot outlive it. */}
+      {isTrackable(task.status) && <LocationSharing key={task.id} taskId={task.id} />}
 
       {checkIn && (
         <Card size="sm" className="ring-success/30">

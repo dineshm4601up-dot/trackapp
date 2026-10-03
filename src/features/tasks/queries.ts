@@ -35,6 +35,7 @@ export async function listTasks(filters: TaskFilters) {
   if (filters.type) query = query.eq("task_type", filters.type);
   if (filters.agent) query = query.eq("agent_id", filters.agent);
   if (filters.customer) query = query.eq("customer_id", filters.customer);
+  if (filters.location) query = query.eq("location_id", filters.location);
   if (filters.date) query = query.eq("scheduled_date", filters.date);
   if (filters.priority) query = query.eq("priority", filters.priority);
   const search = searchFilter(SEARCH_COLUMNS, filters.q);
@@ -81,10 +82,10 @@ export async function getTaskHistory(id: string) {
   return data;
 }
 
-/** Labels for the agent/customer filter chips (any status, so history stays filterable). */
+/** Labels for the agent/customer/location filter chips (any status, so history stays filterable). */
 export async function getFilterSelections(filters: TaskFilters) {
   const supabase = await createClient();
-  const [agent, customer] = await Promise.all([
+  const [agent, customer, location] = await Promise.all([
     filters.agent
       ? supabase
           .from("agent_directory")
@@ -94,6 +95,9 @@ export async function getFilterSelections(filters: TaskFilters) {
       : Promise.resolve({ data: null }),
     filters.customer
       ? supabase.from("customers").select("id, name, customer_code, is_active").eq("id", filters.customer).maybeSingle()
+      : Promise.resolve({ data: null }),
+    filters.location
+      ? supabase.from("locations").select("id, location_name, city, is_active").eq("id", filters.location).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
   const agentRow = agent.data;
@@ -109,6 +113,7 @@ export async function getFilterSelections(filters: TaskFilters) {
           }
         : null,
     customer: customer.data ?? null,
+    location: location.data ?? null,
   };
 }
 

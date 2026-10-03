@@ -13,6 +13,7 @@ import {
 } from "@/features/tasks/schemas";
 import { requireAdmin } from "@/lib/auth/session";
 import { formValues, validationError, type ActionResult, type FormState } from "@/lib/form-state";
+import { kickCommunications } from "@/lib/communication/dispatcher";
 import { searchFilter } from "@/lib/list-params";
 import { withIds } from "@/lib/rows";
 import { createClient } from "@/lib/supabase/server";
@@ -101,6 +102,7 @@ export async function createTask(_prev: FormState, formData: FormData): Promise<
   });
   if (error) return failure(error, "created", values);
 
+  kickCommunications(); // send what this change queued (assignment, reassignment, cancellation…)
   revalidatePath(LIST_PATH);
   return { status: "success", message: "Task created successfully.", redirectTo: `${LIST_PATH}/${taskId}?created=1` };
 }
@@ -121,6 +123,7 @@ export async function updateTask(id: string, _prev: FormState, formData: FormDat
   });
   if (error) return failure(error, "updated", values);
 
+  kickCommunications(); // send what this change queued (assignment, reassignment, cancellation…)
   revalidatePath(LIST_PATH);
   revalidatePath(`${LIST_PATH}/${id}`);
   return {
@@ -139,6 +142,7 @@ export async function cancelTask(id: string, reason: string): Promise<ActionResu
   const { error } = await supabase.rpc("admin_cancel_task", { p_task_id: input.data.id, p_reason: input.data.reason });
   if (error) return { ok: false, message: ruleError(error, "cancelled").message };
 
+  kickCommunications(); // send what this change queued (assignment, reassignment, cancellation…)
   revalidatePath(LIST_PATH);
   revalidatePath(`${LIST_PATH}/${input.data.id}`);
   return { ok: true, message: "Task cancelled." };
@@ -172,6 +176,17 @@ export async function searchTaskLocations(customerId: string, value: string): Pr
     .eq("is_active", true)
     .order("location_name")
     .limit(50);
+  const filter = searchFilter(["location_name", "city"], term(value));
+  if (filter) query = query.or(filter);
+  const { data } = await query;
+  return data ?? [];
+}
+
+/** Locations of any customer, for list filters (inactive included so history stays findable). */
+export async function searchAllLocations(value: string): Promise<LocationOption[]> {
+  await requireAdmin();
+  const supabase = await createClient();
+  let query = supabase.from("locations").select("id, location_name, city, is_active").order("location_name").limit(20);
   const filter = searchFilter(["location_name", "city"], term(value));
   if (filter) query = query.or(filter);
   const { data } = await query;

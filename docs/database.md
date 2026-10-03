@@ -9,6 +9,8 @@ PostgreSQL on Supabase. All schema changes live in `supabase/migrations/` (idemp
 | `20261002090000_master_data_admin.sql` | Admin edit of profile name/phone, `agent_directory` / `location_directory` search views, `ACTIVATE_` / `DEACTIVATE_` audit actions |
 | `20261003090000_task_management.sql` | `admin_save_task` / `admin_cancel_task` functions, `task_directory` search view, semantic task audit actions |
 | `20261004090000_agent_workflow.sql` | `agent_transition_task` (agent status changes), `tasks.completion_notes`, history notes, admin cancel up to ARRIVED, audit actions per status step |
+| `20261008090000_notifications.sql` | `notifications`, `communication_queue` (outbox + delivery history), `notification_preferences`, `communication_log` view; event triggers on status history, tasks, cash and proofs; `publish_notification` (idempotent, preference-aware); read-marking, outbox and reminder functions; `notifications` added to Realtime — see [notifications.md](notifications.md) |
+| `20261007090000_monitoring.sql` | `agent_record_location` (the only writer of location events: ownership, active status, validation, rate limit, server time), direct-insert policy removed, `task_monitor` / `agent_activity` views, `task_status_counts`, indexes for latest location and the activity feed, operational tables added to the Realtime publication — see [monitoring.md](monitoring.md) |
 | `20261006090000_task_execution.sql` | `agent_complete_task` (delivery / cash / generic completion, server-decided outcome), `agent_add_task_proof`, `tasks.expected_amount`, `task_products.delivery_notes`, `task_proofs.sha256`, one cash collection per task, collected ≤ expected, private `task-proofs` bucket + storage policies, execution audit actions — see [task-execution.md](task-execution.md) |
 | `20261005090000_gps_checkin.sql` | `agent_check_in` (GPS check-in), `haversine_meters`, `app_settings` + `app_setting()`, one successful check-in per task, `TASK_CHECK_IN` audit |
 
@@ -51,7 +53,7 @@ Deletion rules: only `profiles → agents` and `tasks → task_products` cascade
 | `task_proofs` | Metadata for proof files in Supabase Storage | `proof_type` ∈ PHOTO / DOCUMENT / SIGNATURE / OTHER; immutable. |
 | `cash_collections` | Expected vs collected money per task | Money is `numeric(14,2)`; ISO currency code; collected > 0 requires method and time; method ∈ CASH / UPI / CARD / BANK_TRANSFER / CHEQUE / OTHER. |
 | `task_status_history` | Immutable lifecycle log | Written only by trigger on every task insert/status change, with actor (`auth.uid()`) and optional reason. |
-| `agent_location_events` | Future periodic location samples | Agents can insert only their own. Not used yet. |
+| `agent_location_events` | Task-scoped location samples shared during active field work | Append-only. Written only by `agent_record_location()`; no direct insert, update or delete for any app user. |
 | `audit_logs` | Who / what / when / entity / old → new | Written by trigger on profiles, agents, customers, locations, products, tasks, task_products, cash_collections. Records only changed columns. Read-only for admins; nobody can edit or delete. |
 
 `notifications` is **deferred** to the notifications phase: nothing produces notifications yet, and the table design depends on that phase's delivery channels.
@@ -78,6 +80,7 @@ Helper functions (`SECURITY DEFINER`, `search_path = ''`, executable only by `au
 | `is_my_task(task_id)` | task is assigned to the caller and not `DRAFT` |
 | `agent_check_in(…)` | the only way to reach `CHECKED_IN`: server-side distance + geofence decision; `SECURITY DEFINER` — see [gps-checkin.md](gps-checkin.md) |
 | `agent_transition_task(…)` | the only way an agent changes task status; ownership + expected-status + transition checks; `SECURITY DEFINER` — see [agent-workflow.md](agent-workflow.md) |
+| `agent_record_location(…)` | the only way a location event is written; task must be the caller's own and in an active field state; rate limited; `SECURITY DEFINER` — see [monitoring.md](monitoring.md) |
 | `agent_complete_task(…)` / `agent_add_task_proof(…)` | the only way to complete a task or register proof; validates execution data and decides COMPLETED vs PARTIALLY_COMPLETED; `SECURITY DEFINER` — see [task-execution.md](task-execution.md) |
 | `admin_save_task(…)` / `admin_cancel_task(…)` | task writes with business validation; `SECURITY INVOKER` (RLS applies), admin-only — see [tasks.md](tasks.md) |
 | `get_my_role()` | caller's role if active, else NULL |
@@ -95,7 +98,10 @@ Roles always come from `profiles` via `auth.uid()`, never from JWT claims or the
 | task_proofs | read | read own; add for own task as self |
 | cash_collections | read, create, update | read own |
 | task_status_history | read | read own tasks' history |
-| agent_location_events | read | read own; add own (task, if given, must be theirs) |
+| agent_location_events | read | read own; add only through `agent_record_location()` (own active task) |
+| notifications | read all (delivery log); mark own as read | read own; mark own as read (functions only) |
+| communication_queue | read; retry a failed message | no access |
+| notification_preferences | own row | own row |
 | audit_logs | read | none |
 
 The search views `agent_directory` (agents + profile) and `location_directory` (locations + customer) are `security_invoker`, so the caller's RLS on the underlying tables applies: agents see only their own row and their tasks' locations.
@@ -117,7 +123,9 @@ Unique constraints index `task_code`, `sku`, `customer_code`, `employee_code`, `
 | `checkins(task_id)`, `checkins(agent_id, checked_in_at desc)`, `checkins(checked_in_at)` | Per task, per agent, by time |
 | `task_proofs(task_id)`, `task_proofs(agent_id)`, `cash_collections(task_id)`, `cash_collections(agent_id)` | Per task / per agent |
 | `task_status_history(task_id, changed_at)` | Task timeline |
-| `agent_location_events(agent_id, recorded_at desc)` | Agent trail |
+| `agent_location_events(agent_id, recorded_at desc)` | Latest event per agent; rate limit |
+| `agent_location_events(task_id, recorded_at desc)` | Latest location per task (monitoring, map) |
+| `task_status_history(changed_at desc)`, `audit_logs(action, created_at desc)` | Recent-activity feed |
 | `audit_logs(actor_user_id)`, `audit_logs(entity_type, entity_id, created_at desc)` | Audit by actor / entity |
 
 Not indexed on purpose: `tasks(task_type)` (low selectivity), standalone `tasks(agent_id)` / `tasks(scheduled_date)` (covered by the composites above).
@@ -128,4 +136,4 @@ Private buckets, added with their storage policies in the proof-upload phase: `t
 
 ## Testing
 
-`supabase/tests/rls_security_test.sql` runs 238 checks as the real `authenticated` and `anon` roles with per-user JWT claims, inside a transaction that is rolled back. Run it with `psql "$SUPABASE_DB_URL" -f supabase/tests/rls_security_test.sql`. It raises an error if any check fails.
+`supabase/tests/rls_security_test.sql` runs 327 checks as the real `authenticated` and `anon` roles with per-user JWT claims, inside a transaction that is rolled back. Run it with `psql "$SUPABASE_DB_URL" -f supabase/tests/rls_security_test.sql`. It raises an error if any check fails.

@@ -33,7 +33,7 @@ export default async function TasksPage(props: PageProps<"/admin/tasks">) {
           </Button>
         }
       />
-      <TaskFiltersBar selectedAgent={selections.agent} selectedCustomer={selections.customer} />
+      <TaskFiltersBar selectedAgent={selections.agent} selectedCustomer={selections.customer} selectedLocation={selections.location} />
       <Suspense key={JSON.stringify(filters)} fallback={<ListSkeleton label="Loading tasks…" />}>
         <TaskList filters={filters} />
       </Suspense>

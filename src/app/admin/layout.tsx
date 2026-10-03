@@ -4,7 +4,9 @@ import { AdminHeader } from "@/components/layout/admin-header";
 import { AdminNav } from "@/components/layout/admin-nav";
 import { Brand } from "@/components/layout/brand";
 import { SkipLink } from "@/components/layout/skip-link";
+import { LiveUpdates } from "@/components/shared/live-updates";
 import { siteConfig } from "@/config/site";
+import { getBellNotifications } from "@/features/notifications/queries";
 import { requireAdmin } from "@/lib/auth/session";
 
 export const metadata: Metadata = {
@@ -12,7 +14,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
-  const { profile } = await requireAdmin();
+  const { user, profile } = await requireAdmin();
+  const notifications = await getBellNotifications(user.id);
 
   return (
     <div className="flex min-h-dvh">
@@ -28,7 +31,16 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminHeader profile={profile} />
+        <AdminHeader profile={profile} notifications={notifications} />
+        {/* One channel for the notification centre: only this user's own rows. */}
+        <LiveUpdates
+          channel="notifications"
+          bindings={[
+            { table: "notifications", event: "INSERT", filter: `recipient_user_id=eq.${user.id}` },
+            { table: "notifications", event: "UPDATE", filter: `recipient_user_id=eq.${user.id}` },
+          ]}
+          hidden
+        />
         <main id="main" className="flex-1 p-4 md:p-6 lg:p-8">
           <div className="mx-auto w-full max-w-7xl space-y-6">{children}</div>
         </main>

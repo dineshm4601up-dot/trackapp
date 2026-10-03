@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAgent } from "@/lib/auth/session";
+import { kickCommunications } from "@/lib/communication/dispatcher";
 import { createClient } from "@/lib/supabase/server";
 
 // Only raw readings are accepted. Any other field a client sends (e.g. a
@@ -105,6 +106,7 @@ export async function checkInMyTask(input: CheckInInput): Promise<CheckInResult>
     return fail("CHECKIN_FAILED");
   }
 
+  kickCommunications();
   revalidatePath("/agent", "layout");
   revalidatePath(`/admin/tasks/${taskId}`);
 

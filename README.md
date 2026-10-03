@@ -2,7 +2,7 @@
 
 Field task tracking: admins assign tasks (delivery, cash collection, pickup, inspection, …) at customer locations; agents travel there, check in by GPS, perform the task, submit proof, and admins verify.
 
-**Status:** Phases 1–8 — foundation, authentication & roles, database & RLS, master data, task creation & assignment, the agent task workflow, GPS check-in with server-side geofence validation, and task execution (delivery quantities, cash collection, photo/document proof, failure reporting).
+**Status:** Phases 1–10 — foundation, authentication & roles, database & RLS, master data, task creation & assignment, the agent task workflow, GPS check-in with server-side geofence validation, task execution (delivery quantities, cash collection, photo/document proof, failure reporting), admin monitoring (live task updates, task-scoped agent location sharing, operational map), and notifications (in-app notification centres with live updates, e-mail through a provider abstraction, preferences, reminders).
 
 ## Technology stack
 
@@ -34,8 +34,12 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Publishable key (`sb_publishable_…`) or legacy anon key. Safe: data is protected by RLS |
 | `NEXT_PUBLIC_MAPS_API_KEY` | Yes | Maps key, referrer-restricted (used from the maps phase) |
-| `NEXT_PUBLIC_APP_URL` | Yes | Base URL for auth redirects (later phases) |
-| `SUPABASE_SECRET_KEY` | **Never** | Secret / service-role key. Bypasses RLS; server-only, used from the agent-provisioning phase |
+| `NEXT_PUBLIC_APP_URL` | Yes | Base URL for auth redirects and for the "Open task" link in notification e-mails |
+| `SUPABASE_SECRET_KEY` | **Never** | Secret / service-role key. Bypasses RLS; server-only. Used for agent provisioning, removing rejected proof uploads, and the notification outbox |
+| `EMAIL_PROVIDER` | **Never** | `resend`, or empty to keep e-mail disabled |
+| `EMAIL_API_KEY` | **Never** | API key of the e-mail provider |
+| `EMAIL_FROM` | **Never** | Verified sender, e.g. `FieldTrack <notifications@example.com>` |
+| `CRON_SECRET` | **Never** | Secret for the scheduler endpoint `/api/cron/notifications` |
 
 Only `NEXT_PUBLIC_*` variables are ever bundled into client JavaScript. The app builds without any variables set; pages that need Supabase report "not configured" instead of crashing.
 
@@ -71,8 +75,12 @@ Open `/status` to verify the Supabase connection from both the server and the br
 | `/set-password` | Link holder | Agent onboarding: one-time setup link → choose password |
 | `/admin` | `ADMIN` | Dashboard with master-data counts |
 | `/admin/agents`, `/customers`, `/locations`, `/products` | `ADMIN` | Master data management, see [docs/master-data.md](docs/master-data.md) |
+| `/admin/monitoring`, `/admin/monitoring/map` | `ADMIN` | Live task board and map of last known agent locations, see [docs/monitoring.md](docs/monitoring.md) |
 | `/admin/tasks` | `ADMIN` | Task creation, assignment, editing and cancellation, see [docs/tasks.md](docs/tasks.md) |
-| `/admin/monitoring`, `/reports`, `/settings` | `ADMIN` | Placeholders for later phases |
+| `/admin/notifications` | `ADMIN` | Own notifications, delivery log of everything sent, preferences and channel status |
+| `/agent/notifications` | `AGENT` | Notification centre (also the bell in the header) |
+| `/api/cron/notifications` | Scheduler secret | Creates reminders and sends / retries queued messages |
+| `/admin/reports`, `/settings` | `ADMIN` | Placeholders for later phases |
 | `/agent`, `/agent/tasks`, `/agent/tasks/[id]`, `/agent/history` | `AGENT` | Mobile task workflow (accept → travel → arrive → GPS check-in → start → record delivery / cash / proof → complete, or report a failure), see [docs/agent-workflow.md](docs/agent-workflow.md), [docs/gps-checkin.md](docs/gps-checkin.md) and [docs/task-execution.md](docs/task-execution.md) |
 | `/auth/signout` | — | Forced sign-out for inactive/unprovisioned accounts |
 
@@ -139,10 +147,26 @@ supabase/
 docs/
 ├─ database.md           # schema, relationships, RLS
 ├─ master-data.md, tasks.md, agent-workflow.md, gps-checkin.md
-└─ task-execution.md     # delivery, cash, proof, completion
+├─ task-execution.md     # delivery, cash, proof, completion
+├─ monitoring.md         # realtime monitoring, location sharing, map
+└─ notifications.md      # notification events, outbox, providers, scheduler
 ```
 
 Domain code goes in `src/features/<domain>/` (components, actions, queries, schemas) as each phase adds it.
+
+## Notifications
+
+Full reference: [docs/notifications.md](docs/notifications.md).
+
+- **Flow:** a task event (assignment, reassignment, accept, check-in, start, complete, partial, fail, cancel, verify, reschedule, cash, proof, reminder) → database trigger in the same transaction → `notifications` row for each recipient → Supabase Realtime → bell and notification centre. Important types also write an outbox row (`communication_queue`) that the server sends afterwards through a provider adapter.
+- **Tables:** `notifications`, `communication_queue` (outbox and delivery history), `notification_preferences`, and the `communication_log` view.
+- **RLS:** users read only their own notifications and mark only their own as read; nobody can create, edit or retarget one from the client; the outbox is admin-read-only and processed with the service key on the server.
+- **Providers:** in-app is always on. **E-mail: Resend, when configured.** **SMS and WhatsApp: interface only, not enabled.** Business code depends on `src/lib/communication/types.ts`, never on a provider.
+- **E-mail setup:** set `EMAIL_PROVIDER=resend`, `EMAIL_API_KEY`, `EMAIL_FROM` and `NEXT_PUBLIC_APP_URL` on the server. Without them e-mails are recorded as "Not sent" and everything else works.
+- **Retries:** up to 3 attempts (after 1 and 5 minutes) for temporary failures; permanent failures stop at once; messages older than 24 hours are cancelled. A failed e-mail never affects the task.
+- **Scheduler (production):** call `GET /api/cron/notifications` with `Authorization: Bearer $CRON_SECRET` every few minutes (Vercel Cron or any external scheduler). It creates reminders and retries queued messages. No `vercel.json` is committed — see the doc for the snippet and the Hobby-plan limit.
+- **Local development:** nothing to configure for in-app notifications. Trigger the scheduler by hand with `curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/notifications`.
+- **Troubleshooting:** the Settings tab of `/admin/notifications` shows which channels are enabled and why not; the Delivery log shows each message with its attempts and error.
 
 ## Security notes
 

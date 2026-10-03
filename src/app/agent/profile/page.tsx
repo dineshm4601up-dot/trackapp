@@ -5,12 +5,16 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
+import { NotificationPreferencesForm } from "@/features/notifications/components/preferences-form";
+import { getMyPreferences } from "@/features/notifications/queries";
+import { getEmailProvider } from "@/lib/communication/providers";
 import { requireAgent } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Profile" };
 
 export default async function AgentProfilePage() {
-  const { profile } = await requireAgent();
+  const { user, profile } = await requireAgent();
+  const preferences = await getMyPreferences(user.id);
 
   const details = [
     { label: "Email", value: profile.email },
@@ -39,6 +43,7 @@ export default async function AgentProfilePage() {
           </dl>
         </CardContent>
       </Card>
+      <NotificationPreferencesForm initial={preferences} emailAvailable={getEmailProvider().enabled} />
       <SignOutButton className="w-full" />
     </>
   );
