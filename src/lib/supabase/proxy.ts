@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { readSupabaseEnv } from "@/lib/env";
+import type { Database } from "@/types/database.types";
 
 const PROTECTED_PREFIXES = ["/admin", "/agent"];
 
@@ -23,7 +24,7 @@ export async function updateSession(request: NextRequest) {
 
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(env.data.url, env.data.publishableKey, {
+  const supabase = createServerClient<Database>(env.data.url, env.data.publishableKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();

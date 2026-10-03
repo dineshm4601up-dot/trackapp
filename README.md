@@ -2,7 +2,7 @@
 
 Field task tracking: admins assign tasks (delivery, cash collection, pickup, inspection, …) at customer locations; agents travel there, check in by GPS, perform the task, submit proof, and admins verify.
 
-**Status:** Phase 1 — project foundation. Authentication and business features arrive in later phases.
+**Status:** Phases 1–8 — foundation, authentication & roles, database & RLS, master data, task creation & assignment, the agent task workflow, GPS check-in with server-side geofence validation, and task execution (delivery quantities, cash collection, photo/document proof, failure reporting).
 
 ## Technology stack
 
@@ -58,6 +58,8 @@ Open `/status` to verify the Supabase connection from both the server and the br
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Generate route types and run `tsc --noEmit` |
+| `npm run db:types` | Regenerate `src/types/database.types.ts` from the database (needs `SUPABASE_DB_URL`) |
+| `npm run dev:webpack` / `npm run build:webpack` | Same as `dev` / `build` with Webpack + WASM. Use when Windows Smart App Control blocks Next's native compiler. |
 
 ## Routes
 
@@ -66,8 +68,12 @@ Open `/status` to verify the Supabase connection from both the server and the br
 | `/` | Public | Landing page |
 | `/login` | Public | Email/password sign-in (no public registration) |
 | `/status` | Public | Supabase connection check |
-| `/admin/*` | `ADMIN` | Admin console; modules other than the dashboard are placeholders |
-| `/agent/*` | `AGENT` | Mobile agent app; Tasks and History are placeholders |
+| `/set-password` | Link holder | Agent onboarding: one-time setup link → choose password |
+| `/admin` | `ADMIN` | Dashboard with master-data counts |
+| `/admin/agents`, `/customers`, `/locations`, `/products` | `ADMIN` | Master data management, see [docs/master-data.md](docs/master-data.md) |
+| `/admin/tasks` | `ADMIN` | Task creation, assignment, editing and cancellation, see [docs/tasks.md](docs/tasks.md) |
+| `/admin/monitoring`, `/reports`, `/settings` | `ADMIN` | Placeholders for later phases |
+| `/agent`, `/agent/tasks`, `/agent/tasks/[id]`, `/agent/history` | `AGENT` | Mobile task workflow (accept → travel → arrive → GPS check-in → start → record delivery / cash / proof → complete, or report a failure), see [docs/agent-workflow.md](docs/agent-workflow.md), [docs/gps-checkin.md](docs/gps-checkin.md) and [docs/task-execution.md](docs/task-execution.md) |
 | `/auth/signout` | — | Forced sign-out for inactive/unprovisioned accounts |
 
 ## Database migrations
@@ -83,29 +89,23 @@ Schema, relationships, RLS rules and indexes are documented in [docs/database.md
 
 - Supabase Auth, email + password. Sessions live in HTTP-only cookies managed by `@supabase/ssr`; `src/proxy.ts` refreshes them on each request.
 - Each auth user has one row in `public.profiles` (`id` = `auth.users.id`), created automatically by the `on_auth_user_created` trigger with `role = 'AGENT'` and `is_active = true`.
-- Users can read **only their own** profile and cannot change any profile column. Role changes and deactivation are done by an operator (SQL Editor / service role).
+- Users can read **only their own** profile. Admins can edit agents' name and phone; nobody can change `role` or account `is_active` through the app. Those are operator tasks (SQL Editor / service role).
+- An AGENT can use the app only with an **active agent record** (created under Admin → Agents).
 - Server-side guards in `src/lib/auth/session.ts` — `requireUser()`, `requireAdmin()`, `requireAgent()` — protect every admin/agent layout and page. An agent opening `/admin` is sent to `/agent` and vice-versa; inactive or unprovisioned accounts are signed out with an explanation.
 
 **Required Supabase setting:** Dashboard → Authentication → Sign In / Providers → turn **off "Allow new users to sign up"**. Accounts are created by administrators only; with sign-ups enabled, anyone holding the public key could register an (agent) account.
 
-### Creating test users
+### Creating users
 
-1. Dashboard → **Authentication → Users → Add user → Create new user**. Enter email and password and tick **Auto Confirm User**. The trigger creates the profile as an active `AGENT`.
-2. Optionally set a display name, then adjust role/status in **SQL Editor**:
+- **Agents:** Admin → Agents → *Add agent*. The admin receives a one-time link for the agent to set their own password. Entering the email of an existing AGENT account links that account instead.
+- **Admins** (operator task, deliberately not in the UI): Dashboard → **Authentication → Users → Add user** (tick **Auto Confirm User**), then in **SQL Editor**:
 
 ```sql
--- Admin
-update public.profiles set full_name = 'Test Admin', role = 'ADMIN', is_active = true
-where email = 'admin@example.com';
-
--- Agent (default role; just set a name)
-update public.profiles set full_name = 'Test Agent'
-where email = 'agent@example.com';
-
--- Inactive agent
-update public.profiles set full_name = 'Inactive Agent', role = 'AGENT', is_active = false
-where email = 'inactive@example.com';
+update public.profiles set full_name = 'Jane Admin', role = 'ADMIN', is_active = true
+where email = 'jane@example.com';
 ```
+
+- **Block any account entirely:** `update public.profiles set is_active = false where email = '…';` (agents can also be deactivated from the Agents page).
 
 Never commit real credentials or test passwords to the repository.
 
@@ -124,7 +124,9 @@ src/
 │  └─ shared/            # page header, empty state, stat card, route error
 ├─ config/               # site branding, navigation definitions
 ├─ features/
-│  └─ auth/              # sign-in/out server actions, schemas, login form
+│  ├─ auth/              # sign-in/out, password setup
+│  ├─ agents/ customers/ locations/ products/   # master data
+│  └─ tasks/             # task creation & assignment
 ├─ lib/
 │  ├─ auth/              # roles, profile loading, requireAdmin/requireAgent guards
 │  ├─ env.ts             # Zod-validated public environment
@@ -135,7 +137,9 @@ supabase/
 ├─ migrations/           # SQL migrations (idempotent)
 └─ tests/                # database security tests (rolled back)
 docs/
-└─ database.md           # schema, relationships, RLS
+├─ database.md           # schema, relationships, RLS
+├─ master-data.md, tasks.md, agent-workflow.md, gps-checkin.md
+└─ task-execution.md     # delivery, cash, proof, completion
 ```
 
 Domain code goes in `src/features/<domain>/` (components, actions, queries, schemas) as each phase adds it.

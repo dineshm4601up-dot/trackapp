@@ -23,22 +23,36 @@ export type NavItem = {
   plannedPhase?: number;
 };
 
-export const adminNav: NavItem[] = [
-  { title: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { title: "Agents", href: "/admin/agents", icon: Users, plannedPhase: 4 },
-  { title: "Customers", href: "/admin/customers", icon: Building2, plannedPhase: 4 },
-  { title: "Locations", href: "/admin/locations", icon: MapPin, plannedPhase: 4 },
-  { title: "Products", href: "/admin/products", icon: Package, plannedPhase: 4 },
-  { title: "Tasks", href: "/admin/tasks", icon: ClipboardList, plannedPhase: 5 },
-  { title: "Monitoring", href: "/admin/monitoring", icon: Activity, plannedPhase: 11 },
-  { title: "Reports", href: "/admin/reports", icon: ChartColumn, plannedPhase: 12 },
-  { title: "Settings", href: "/admin/settings", icon: Settings, plannedPhase: 4 },
+export type NavGroup = { label?: string; items: NavItem[] };
+
+export const adminNavGroups: NavGroup[] = [
+  { items: [{ title: "Dashboard", href: "/admin", icon: LayoutDashboard }] },
+  {
+    label: "Master data",
+    items: [
+      { title: "Agents", href: "/admin/agents", icon: Users },
+      { title: "Customers", href: "/admin/customers", icon: Building2 },
+      { title: "Locations", href: "/admin/locations", icon: MapPin },
+      { title: "Products", href: "/admin/products", icon: Package },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { title: "Tasks", href: "/admin/tasks", icon: ClipboardList },
+      { title: "Monitoring", href: "/admin/monitoring", icon: Activity, plannedPhase: 11 },
+      { title: "Reports", href: "/admin/reports", icon: ChartColumn, plannedPhase: 12 },
+    ],
+  },
+  { label: "System", items: [{ title: "Settings", href: "/admin/settings", icon: Settings, plannedPhase: 12 }] },
 ];
+
+export const adminNav: NavItem[] = adminNavGroups.flatMap((group) => group.items);
 
 export const agentNav: NavItem[] = [
   { title: "Home", href: "/agent", icon: House },
-  { title: "Tasks", href: "/agent/tasks", icon: ListChecks, plannedPhase: 6 },
-  { title: "History", href: "/agent/history", icon: History, plannedPhase: 6 },
+  { title: "Tasks", href: "/agent/tasks", icon: ListChecks },
+  { title: "History", href: "/agent/history", icon: History },
   { title: "Profile", href: "/agent/profile", icon: UserRound },
 ];
 

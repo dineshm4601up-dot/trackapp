@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoginForm } from "@/features/auth/components/login-form";
-import { accessDeniedMessages, isAccessDeniedReason } from "@/features/auth/messages";
+import { isLoginNotice, loginNoticeMessages } from "@/features/auth/messages";
 import { resolvePostLoginPath } from "@/lib/auth/roles";
 import { getCurrentProfile } from "@/lib/auth/session";
 import { readSupabaseEnv } from "@/lib/env";
@@ -34,7 +34,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
       <CardContent>
         <LoginForm
           next={next}
-          notice={isAccessDeniedReason(reason) ? accessDeniedMessages[reason] : undefined}
+          notice={isLoginNotice(reason) ? loginNoticeMessages[reason] : undefined}
         />
       </CardContent>
     </Card>

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isAccessDeniedReason } from "@/features/auth/messages";
+import { isLoginNotice } from "@/features/auth/messages";
 import { readSupabaseEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
@@ -18,6 +18,6 @@ export async function GET(request: NextRequest) {
 
   const reason = request.nextUrl.searchParams.get("reason");
   const url = new URL("/login", request.url);
-  if (isAccessDeniedReason(reason)) url.searchParams.set("reason", reason);
+  if (isLoginNotice(reason)) url.searchParams.set("reason", reason);
   return NextResponse.redirect(url);
 }
